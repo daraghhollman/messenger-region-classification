@@ -158,22 +158,33 @@ def Get_Sample_Features(data):
 def Process_Crossing(inputs):
     i, crossing_interval = inputs
 
+    if crossing_interval["Type"] == "DATA_GAP":
+        return None
+
     # We define the eariest possible sample start
     # and latest possible sample end.
     # Making sure to never go past the next boundary.
     earliest_sample_start_before = crossing_interval["Start Time"] - search_distance
     latest_sample_start_before = crossing_interval["Start Time"] - sample_length
 
-    if earliest_sample_start_before < crossing_intervals.iloc[i-1]["End Time"]:
-        earliest_sample_start_before = crossing_intervals.iloc[i-1]["End Time"]
+    if i > 0:
+        if earliest_sample_start_before < crossing_intervals.loc[i-1]["End Time"]:
+            earliest_sample_start_before = crossing_intervals.loc[i-1]["End Time"]
 
     earliest_sample_start_after = crossing_interval["End Time"]
     latest_sample_start_after = (
         crossing_interval["End Time"] + search_distance - sample_length
     )
 
-    if latest_sample_start_after > crossing_intervals.iloc[i+1]["Start Time"]:
-        latest_sample_start_after = crossing_intervals.iloc[i+1]["Start Time"]
+    if i > 0:
+        if latest_sample_start_after > crossing_intervals.loc[i+1]["Start Time"]:
+            latest_sample_start_after = crossing_intervals.loc[i+1]["Start Time"] - sample_length
+
+    if earliest_sample_start_before > latest_sample_start_before:
+        raise ValueError(f"Sample start ({earliest_sample_start_before}) is after sample end ({latest_sample_start_before})!")
+
+    if earliest_sample_start_after > latest_sample_start_after:
+        raise ValueError(f"Sample start ({earliest_sample_start_after}) is after sample end ({latest_sample_start_after})!")
 
     # Load data
     surrounding_data = mag.Load_Between_Dates(
@@ -211,9 +222,7 @@ def Process_Crossing(inputs):
 
         samples.append([sample_before, sample_after])
 
-    print(samples)
-
-    return np.array(samples)
+    return samples
 
 
 ##########################
@@ -226,7 +235,7 @@ search_distance = dt.timedelta(
 
 # Load boundary crossings
 crossing_intervals = boundaries.Load_Crossings(
-    utils.User.CROSSING_LISTS["Philpott"], include_data_gaps=False
+    utils.User.CROSSING_LISTS["Philpott"], include_data_gaps=True
 )
 
 # Loop through boundary crossing intervals
@@ -249,6 +258,9 @@ with multiprocessing.Pool(
         desc="Processing crossings",
         total=len(process_items),
     ):
+        if not isinstance(samples_taken, list):
+            continue
+
         # Save samples
         for row in samples_taken:
             for sample in [row[0], row[1]]:
