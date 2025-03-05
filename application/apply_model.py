@@ -18,6 +18,12 @@ colours = ["black", "#DC267F", "#648FFF", "#FFB000"]
 
 crossings = boundaries.Load_Crossings(utils.User.CROSSING_LISTS["Philpott"])
 
+crossings = crossings.loc[
+    crossings["Start Time"].between(dt.datetime(2011, 1, 1), dt.datetime(2012, 1, 1))
+]
+
+crossings = crossings.sample(frac=1)
+
 # crossings = crossings.loc[crossings["Start Time"].between(dt.datetime(2011, 11, 22, 7), dt.datetime(2011, 11, 22, 9))]
 
 time_buffer = dt.timedelta(minutes=10)
@@ -38,15 +44,17 @@ minimum_success_rate = 0.6
 # Load Model
 print("Loading model")
 
-models = {
+all_models = {
     "Random Forest": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/model_rf_region_classifier",
-    "Stratified Random Forest": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/model_stratified_three_region_classifier"
+    "Stratified Random Forest": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/model_stratified_three_region_classifier",
+    "New Random Forest": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/model_new",
+    "Multi_Model": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/multi_model_rf",
 }
 
-with open(models["Stratified Random Forest"], "rb") as file:
-    model: sklearn.ensemble.RandomForestClassifier = pickle.load(file)
+with open(all_models["Multi_Model"], "rb") as file:
+    models = pickle.load(file)
 
-model_features = sorted(model.feature_names_in_)
+model_features = sorted(models[-1].feature_names_in_)
 
 
 # Function to get window features in parallel
@@ -103,10 +111,21 @@ def Get_Window_Features(input):
     return X
 
 
+def Multi_Model_Predict(models: list[sklearn.ensemble.RandomForestClassifier], samples):
+    """
+    Average the predictions from multiple models
+    """
+
+    predictions = np.array([model.predict_proba(samples) for model in models])
+
+    probabilities = np.mean(predictions, axis=0)
+    probabilities_stds = np.std(predictions, axis=0)
+
+    return probabilities, probabilities_stds
+
+
 for i, crossing in crossings.iterrows():
 
-    if i < 10:
-        continue
     print(f"Processing crossing {i}")
     # Import time series
     start = crossing["Start Time"] - time_buffer
@@ -143,28 +162,23 @@ for i, crossing in crossings.iterrows():
                 missing.append([1, 1, 1])
 
     probabilities = np.full((len(windows), 3), np.nan)
+    probability_errors = np.full((len(windows), 3), np.nan)
 
-    valid_indices = np.array(missing)[:,0] == 0
+    valid_indices = np.array(missing)[:, 0] == 0
 
     if samples:  # Check if we have any samples
         samples = pd.concat(samples, ignore_index=True)
-        probabilities[valid_indices, :] = model.predict_proba(samples)
+        probabilities[valid_indices, :], probability_errors[valid_indices, :] = (
+            Multi_Model_Predict(models, samples)
+        )
 
     else:
         raise ValueError("All samples missing")
-
-    print(probabilities)
 
     fig, (ax, probability_ax) = plt.subplots(
         2, 1, gridspec_kw={"height_ratios": [3, 1]}, sharex=True, figsize=(8, 6)
     )
 
-    ax.plot(
-        data["date"],
-        data["|B|"],
-        color=colours[0],
-        lw=1,
-    )
     ax.plot(
         data["date"],
         data["Bx"],
@@ -183,29 +197,56 @@ for i, crossing in crossings.iterrows():
         color=colours[3],
         lw=1,
     )
+    ax.plot(
+        data["date"],
+        data["|B|"],
+        color=colours[0],
+        lw=1,
+    )
 
     probability_ax.plot(
         window_centres,
-        probabilities[:,0],
+        probabilities[:, 0],
         color=colours[3],
         lw=2,
         label="Magnetosheath",
     )
-
-    probability_ax.plot(
+    probability_ax.fill_between(
         window_centres,
-        probabilities[:,1],
-        color=colours[1],
-        lw=2,
-        label="Magnetosphere",
+        probabilities[:, 0] - probability_errors[:, 0],
+        probabilities[:, 0] + probability_errors[:, 0],
+        color=colours[3],
+        alpha=0.5
     )
 
     probability_ax.plot(
         window_centres,
-        probabilities[:,2],
+        probabilities[:, 1],
+        color=colours[1],
+        lw=2,
+        label="Magnetosphere",
+    )
+    probability_ax.fill_between(
+        window_centres,
+        probabilities[:, 1] - probability_errors[:, 1],
+        probabilities[:, 1] + probability_errors[:, 1],
+        color=colours[1],
+        alpha=0.5
+    )
+
+    probability_ax.plot(
+        window_centres,
+        probabilities[:, 2],
         color=colours[2],
         lw=2,
         label="Solar Wind",
+    )
+    probability_ax.fill_between(
+        window_centres,
+        probabilities[:, 2] - probability_errors[:, 2],
+        probabilities[:, 2] + probability_errors[:, 2],
+        color=colours[2],
+        alpha=0.5
     )
 
     highest_probabilities = np.argmax(probabilities, axis=1)
@@ -218,10 +259,7 @@ for i, crossing in crossings.iterrows():
     # Iterate through each window
     for i in range(len(window_centres) - 1):
 
-        if i == 0:
-            continue
-
-        alpha = 0.1
+        alpha = 0.05
 
         if is_magnetosheath[i]:
             ax.axvspan(

@@ -6,6 +6,7 @@ solar wind, magnetosheath, and magnetosphere.
 import pickle
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
@@ -15,7 +16,10 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
 )
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, train_test_split
+from tqdm import tqdm
+
+SEED = 0
 
 
 def main():
@@ -75,21 +79,47 @@ def main():
 
     y = features_data["Label"]  # Target
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, stratify = y
-    )
+    # MODELLING #
 
+    kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
+
+    models = []
+    accuracies = []
+    training_accuracies = []
+
+    for train_index, test_index in tqdm(kfold.split(X, y), desc="Training Model", total=10):
+
+        X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+        y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+
+        random_forest = RandomForestClassifier(n_estimators=100, random_state=SEED)
+        random_forest.fit(X_train, y_train)
+
+        y_pred = random_forest.predict(X_test)
+        y_pred_training = random_forest.predict(X_train)
+
+        test_accuracy = accuracy_score(y_test, y_pred)
+        train_accuracy = accuracy_score(y_train, y_pred_training)
+
+        models.append(random_forest)
+        accuracies.append(test_accuracy)
+        training_accuracies.append(train_accuracy)
+
+    # Compute average accuracy across all folds
+    avg_test_accuracy = np.mean(accuracies)
+    avg_train_accuracy = np.mean(training_accuracies)
+
+    print(f"\nAverage Test Accuracy: {avg_test_accuracy:.5f}")
+    print(f"Average Training Accuracy: {avg_train_accuracy:.5f}")
+
+    # The following will simply use the last random forest model which was generated
+
+    """
     if input("Show training spread? [y/N]\n > ") == "y":
         Show_Training_Spread(X_train)
+    """
 
-    random_forest = RandomForestClassifier(n_estimators=100)
-    random_forest.fit(X_train, y_train)
-
-    y_pred = random_forest.predict(X_test)
-    accuracy = accuracy_score(y_test, y_pred)
-    print(f"Accuracy: {accuracy:.4f}")
-
-    importances = random_forest.feature_importances_
+    importances = models[-1].feature_importances_
     feature_names = X.columns
 
     "Features:"
@@ -105,7 +135,7 @@ def main():
     plt.title("Feature Importance")
     plt.show()
 
-    cm = confusion_matrix(y_test, y_pred, )
+    cm = confusion_matrix(y_test, y_pred)
 
     print("\nConfusion Matrix\n")
     print(cm)
@@ -120,10 +150,10 @@ def main():
     plt.show()
 
     with open(
-        "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/model_" + input("Save model as: "),
+        "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/multi_model_rf",
         "wb",
     ) as file:
-        pickle.dump(random_forest, file)
+        pickle.dump(models, file)
 
 
 def Show_Training_Spread(training_data):
