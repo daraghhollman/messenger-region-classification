@@ -14,7 +14,16 @@ from tqdm import tqdm
 plot_classifications = True
 plot_crossings = True
 
-colours = ["black", "#DC267F", "#648FFF", "#FFB000"]
+wong_colours = {
+    "black": "black",
+    "orange": "#E69F00",
+    "light blue": "#56B4E9",
+    "green": "#009E73",
+    "yellow": "#F0E442",
+    "blue": "#0072B2",
+    "red": "#D55E00",
+    "pink": "#CC79A7"
+}
 
 crossings = boundaries.Load_Crossings(utils.User.CROSSING_LISTS["Philpott"])
 
@@ -182,32 +191,39 @@ for i, crossing in crossings.iterrows():
     ax.plot(
         data["date"],
         data["Bx"],
-        color=colours[1],
+        color=wong_colours["red"],
         lw=1,
+        alpha=0.7,
+        label="$B_x$"
     )
     ax.plot(
         data["date"],
         data["By"],
-        color=colours[2],
+        color=wong_colours["green"],
         lw=1,
+        alpha=0.7,
+        label="$B_y$"
     )
     ax.plot(
         data["date"],
         data["Bz"],
-        color=colours[3],
+        color=wong_colours["blue"],
         lw=1,
+        alpha=0.7,
+        label="$B_z$"
     )
     ax.plot(
         data["date"],
         data["|B|"],
-        color=colours[0],
+        color=wong_colours["black"],
         lw=1,
+        label="$|B|$"
     )
 
     probability_ax.plot(
         window_centres,
         probabilities[:, 0],
-        color=colours[3],
+        color=wong_colours["orange"],
         lw=2,
         label="Magnetosheath",
     )
@@ -215,14 +231,14 @@ for i, crossing in crossings.iterrows():
         window_centres,
         probabilities[:, 0] - probability_errors[:, 0],
         probabilities[:, 0] + probability_errors[:, 0],
-        color=colours[3],
+        color=wong_colours["orange"],
         alpha=0.5
     )
 
     probability_ax.plot(
         window_centres,
         probabilities[:, 1],
-        color=colours[1],
+        color=wong_colours["pink"],
         lw=2,
         label="Magnetosphere",
     )
@@ -230,14 +246,14 @@ for i, crossing in crossings.iterrows():
         window_centres,
         probabilities[:, 1] - probability_errors[:, 1],
         probabilities[:, 1] + probability_errors[:, 1],
-        color=colours[1],
+        color=wong_colours["pink"],
         alpha=0.5
     )
 
     probability_ax.plot(
         window_centres,
         probabilities[:, 2],
-        color=colours[2],
+        color=wong_colours["yellow"],
         lw=2,
         label="Solar Wind",
     )
@@ -245,7 +261,7 @@ for i, crossing in crossings.iterrows():
         window_centres,
         probabilities[:, 2] - probability_errors[:, 2],
         probabilities[:, 2] + probability_errors[:, 2],
-        color=colours[2],
+        color=wong_colours["yellow"],
         alpha=0.5
     )
 
@@ -257,46 +273,52 @@ for i, crossing in crossings.iterrows():
 
     # Add region shading
     # Iterate through each window
+    magnetosheath_labelled = False
+    magnetosphere_labelled = False
+    solar_wind_labelled = False
     for i in range(len(window_centres) - 1):
 
-        alpha = 0.05
+        alpha = 0.5
 
         if is_magnetosheath[i]:
             ax.axvspan(
                 window_centres[i] - (dt.timedelta(seconds=step_size)) / 2,
                 window_centres[i] + (dt.timedelta(seconds=step_size)) / 2,
-                color=colours[3],
+                facecolor=wong_colours["orange"],
                 edgecolor=None,
                 alpha=alpha,
-                label="Prediction = Magnetosheath",
+                label="Prediction = Magnetosheath" if not magnetosheath_labelled else "",
             )
-            region_a_label = ""
+            magnetosheath_labelled = True
 
         elif is_magnetosphere[i]:
             ax.axvspan(
                 window_centres[i] - (dt.timedelta(seconds=step_size)) / 2,
                 window_centres[i] + (dt.timedelta(seconds=step_size)) / 2,
-                color=colours[1],
+                facecolor=wong_colours["pink"],
                 edgecolor=None,
                 alpha=alpha,
-                label="Prediction = Magnetosphere",
+                label="Prediction = Magnetosphere" if not magnetosphere_labelled else "",
             )
-            region_b_label = ""
+            magnetosphere_labelled = True
 
         elif is_solar_wind[i]:
             ax.axvspan(
                 window_centres[i] - (dt.timedelta(seconds=step_size)) / 2,
                 window_centres[i] + (dt.timedelta(seconds=step_size)) / 2,
-                color=colours[2],
+                facecolor=wong_colours["yellow"],
                 edgecolor=None,
                 alpha=alpha,
-                label="Prediction = Solar Wind",
+                label="Prediction = Solar Wind" if not solar_wind_labelled else "",
             )
-            region_b_label = ""
+            solar_wind_labelled = True
 
     probability_ax.legend()
 
-    ax.set_ylabel("|B| [nT]")
+    mag_legend = ax.legend()
+
+
+    ax.set_ylabel("Magnetic Field Strength [nT]")
     probability_ax.set_ylabel(f"Region Probability")
 
     ax.set_title(
