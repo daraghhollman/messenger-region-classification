@@ -80,14 +80,17 @@ def main():
     y = features_data["Label"]  # Target
 
     # MODELLING #
-
-    kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
+    num_models = 10
+    kfold = StratifiedKFold(n_splits=num_models, shuffle=True, random_state=SEED)
 
     models = []
     accuracies = []
     training_accuracies = []
+    confusion_matrices = []
 
-    for train_index, test_index in tqdm(kfold.split(X, y), desc="Training Model", total=10):
+    for train_index, test_index in tqdm(
+        kfold.split(X, y), desc="Training Model", total=num_models
+    ):
 
         X_train, X_test = X.iloc[train_index], X.iloc[test_index]
         y_train, y_test = y.iloc[train_index], y.iloc[test_index]
@@ -104,10 +107,13 @@ def main():
         models.append(random_forest)
         accuracies.append(test_accuracy)
         training_accuracies.append(train_accuracy)
+        confusion_matrices.append(confusion_matrix(y_test, y_pred))
 
     # Compute average accuracy across all folds
     avg_test_accuracy = np.mean(accuracies)
     avg_train_accuracy = np.mean(training_accuracies)
+    avg_confusion_matrix = np.mean(confusion_matrices, axis=0)
+    confusion_matrix_std = np.std(confusion_matrices, axis=0)
 
     print(f"\nAverage Test Accuracy: {avg_test_accuracy:.5f}")
     print(f"Average Training Accuracy: {avg_train_accuracy:.5f}")
@@ -119,34 +125,65 @@ def main():
         Show_Training_Spread(X_train)
     """
 
-    importances = models[-1].feature_importances_
+    importances = np.array([model.feature_importances_ for model in models]).T
+    mean_importances = np.mean(importances, axis=1)
     feature_names = X.columns
 
-    "Features:"
-    print(feature_names)
+    # Sorting
+    sorted_indices = np.argsort(mean_importances)[::-1]
+    importances = importances[sorted_indices, :]  # Reorder importances
+    mean_importances = mean_importances[sorted_indices]  # Reorder mean values
+    feature_names = [feature_names[i] for i in sorted_indices]  # Reorder feature names
 
-    # Create a DataFrame for visualization
-    feature_importance_df = pd.DataFrame(
-        {"Feature": feature_names, "Importance": importances}
-    ).sort_values(by="Importance", ascending=False)
+    # Create a boxplot
+    plt.figure(figsize=(12, 6))
 
-    plt.figure(figsize=(10, 6))
-    sns.barplot(x="Importance", y="Feature", data=feature_importance_df)
-    plt.title("Feature Importance")
-    plt.show()
+    y_positions = np.arange(len(feature_names))
 
-    cm = confusion_matrix(y_test, y_pred)
+    plt.barh(y_positions, mean_importances, color="white", edgecolor="black")
+    sns.boxplot(data=importances.T, orient="h", color="indianred")
+
+    plt.yticks(y_positions, feature_names)  # Ensure feature names are correctly positioned
+
+    # Add feature names as labels
+    plt.yticks(ticks=np.arange(len(feature_names)), labels=feature_names)
+    plt.xlabel("Feature Importance")
+    plt.title(f"Feature Importance Distribution Across {num_models} Folds")
 
     print("\nConfusion Matrix\n")
-    print(cm)
+    print(avg_confusion_matrix)
 
     print("\nClassification Report\n")
     print(classification_report(y_test, y_pred))
 
-    cm_display = ConfusionMatrixDisplay(
-        cm, display_labels=["Magnetosheath", "Magnetosphere", "Solar Wind"]
+    # Plot the average confusion matrix
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(
+        avg_confusion_matrix,
+        annot=True,
+        fmt=".2f",
+        cmap="viridis",
+        cbar=True,
+        xticklabels=["Magnetosheath", "Magnetosphere", "Solar Wind"],
+        yticklabels=["Magnetosheath", "Magnetosphere", "Solar Wind"],
     )
-    cm_display.plot()
+    # plt.title("Average Confusion Matrix with Std")
+    plt.xlabel("Predicted Label")
+    plt.ylabel("True Label")
+
+    # Annotate with standard deviation
+    for i in range(avg_confusion_matrix.shape[0]):
+        for j in range(avg_confusion_matrix.shape[1]):
+            plt.text(
+                j + 0.5,
+                i + 0.65,
+                f"±{confusion_matrix_std[i, j]:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                color="black" if ((i == 0) and (j == 0)) else "white",
+            )
+
     plt.show()
 
     with open(
