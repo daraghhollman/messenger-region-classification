@@ -184,8 +184,8 @@ for i, crossing in crossings.iterrows():
     else:
         raise ValueError("All samples missing")
 
-    fig, (ax, probability_ax) = plt.subplots(
-        2, 1, gridspec_kw={"height_ratios": [3, 1]}, sharex=True, figsize=(8, 6)
+    fig, (ax, probability_ax, probability_difference_ax) = plt.subplots(
+        3, 1, gridspec_kw={"height_ratios": [3, 1, 1]}, sharex=True, figsize=(8, 6)
     )
 
     ax.plot(
@@ -265,6 +265,29 @@ for i, crossing in crossings.iterrows():
         alpha=0.5
     )
 
+    # Ratio plot
+    # Sort the rows:
+    sorted_probabilities = np.sort(probabilities, axis=1)
+    largest_probabilities = sorted_probabilities[:, -1]
+    second_largest_probabities = sorted_probabilities[:, -2]
+
+    probability_difference = np.abs(largest_probabilities - second_largest_probabities)
+
+    probability_difference_ax.plot(window_centres, probability_difference, color="black")
+
+    # We can also add the average 3 sigma error of all models
+    average_probability_error = np.mean(probability_errors, axis=1)
+
+    probability_difference_ax.fill_between(window_centres, 0, 2 * average_probability_error, label=r"$2 \times$ Probability Average Standard Deviation", color="grey", alpha=0.5)
+
+    probability_difference_ax.legend()
+    probability_difference_ax.set_yscale("log")
+    probability_difference_ax.set_ylabel("Proability Difference\n|most-likely - next-most-likely|")
+    probability_difference_ax.set_ylim(0, 1)
+    probability_difference_ax.margins(0)
+
+
+    # Classification
     highest_probabilities = np.argmax(probabilities, axis=1)
 
     is_magnetosheath = highest_probabilities == 0
@@ -335,4 +358,5 @@ for i, crossing in crossings.iterrows():
     # Add boundary crossing intervals
     boundaries.Plot_Crossing_Intervals(ax, start, end, crossings, color="black")
 
+    plt.tight_layout()
     plt.show()
