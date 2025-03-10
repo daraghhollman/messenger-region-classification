@@ -1,6 +1,7 @@
 import datetime as dt
 import multiprocessing
 import pickle
+from operator import is_
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -22,14 +23,16 @@ wong_colours = {
     "yellow": "#F0E442",
     "blue": "#0072B2",
     "red": "#D55E00",
-    "pink": "#CC79A7"
+    "pink": "#CC79A7",
 }
 
 crossings = boundaries.Load_Crossings(utils.User.CROSSING_LISTS["Philpott"])
 
+"""
 crossings = crossings.loc[
     crossings["Start Time"].between(dt.datetime(2011, 1, 1), dt.datetime(2012, 1, 1))
 ]
+"""
 
 crossings = crossings.sample(frac=1)
 
@@ -184,9 +187,10 @@ for i, crossing in crossings.iterrows():
     else:
         raise ValueError("All samples missing")
 
-    fig, (ax, probability_ax, probability_difference_ax) = plt.subplots(
+    fig, axes = plt.subplots(
         3, 1, gridspec_kw={"height_ratios": [3, 1, 1]}, sharex=True, figsize=(8, 6)
     )
+    (ax, probability_ax, probability_difference_ax) = axes
 
     ax.plot(
         data["date"],
@@ -194,7 +198,7 @@ for i, crossing in crossings.iterrows():
         color=wong_colours["red"],
         lw=1,
         alpha=0.7,
-        label="$B_x$"
+        label="$B_x$",
     )
     ax.plot(
         data["date"],
@@ -202,7 +206,7 @@ for i, crossing in crossings.iterrows():
         color=wong_colours["green"],
         lw=1,
         alpha=0.7,
-        label="$B_y$"
+        label="$B_y$",
     )
     ax.plot(
         data["date"],
@@ -210,15 +214,9 @@ for i, crossing in crossings.iterrows():
         color=wong_colours["blue"],
         lw=1,
         alpha=0.7,
-        label="$B_z$"
+        label="$B_z$",
     )
-    ax.plot(
-        data["date"],
-        data["|B|"],
-        color=wong_colours["black"],
-        lw=1,
-        label="$|B|$"
-    )
+    ax.plot(data["date"], data["|B|"], color=wong_colours["black"], lw=1, label="$|B|$")
 
     probability_ax.plot(
         window_centres,
@@ -232,7 +230,7 @@ for i, crossing in crossings.iterrows():
         probabilities[:, 0] - probability_errors[:, 0],
         probabilities[:, 0] + probability_errors[:, 0],
         color=wong_colours["orange"],
-        alpha=0.5
+        alpha=0.5,
     )
 
     probability_ax.plot(
@@ -247,7 +245,7 @@ for i, crossing in crossings.iterrows():
         probabilities[:, 1] - probability_errors[:, 1],
         probabilities[:, 1] + probability_errors[:, 1],
         color=wong_colours["pink"],
-        alpha=0.5
+        alpha=0.5,
     )
 
     probability_ax.plot(
@@ -262,7 +260,7 @@ for i, crossing in crossings.iterrows():
         probabilities[:, 2] - probability_errors[:, 2],
         probabilities[:, 2] + probability_errors[:, 2],
         color=wong_colours["yellow"],
-        alpha=0.5
+        alpha=0.5,
     )
 
     # Ratio plot
@@ -273,19 +271,44 @@ for i, crossing in crossings.iterrows():
 
     probability_difference = np.abs(largest_probabilities - second_largest_probabities)
 
-    probability_difference_ax.plot(window_centres, probability_difference, color="black")
+    probability_difference_ax.plot(
+        window_centres, probability_difference, color="black"
+    )
+
+    # Moving Average
+    moving_average_size = 5
+    moving_average = np.convolve(
+        probability_difference,
+        np.ones(moving_average_size) / moving_average_size,
+        mode="valid",
+    )
+    probability_difference_ax.plot(
+        window_centres[(moving_average_size - 1) // 2 : -(moving_average_size // 2)],
+        moving_average,
+        color=wong_colours["red"],
+        label=f"Moving Average order {moving_average_size}",
+    )
 
     # We can also add the average 3 sigma error of all models
     average_probability_error = np.mean(probability_errors, axis=1)
 
-    probability_difference_ax.fill_between(window_centres, 0, 2 * average_probability_error, label=r"$2 \times$ Probability Average Standard Deviation", color="grey", alpha=0.5)
+    error_multiplier = 3
+    probability_difference_ax.fill_between(
+        window_centres,
+        0,
+        error_multiplier * average_probability_error,
+        label=f"${error_multiplier}$" + r"$\times$ Probability Average Standard Deviation",
+        color="grey",
+        alpha=0.5,
+    )
 
     probability_difference_ax.legend()
     probability_difference_ax.set_yscale("log")
-    probability_difference_ax.set_ylabel("Proability Difference\n|most-likely - next-most-likely|")
-    probability_difference_ax.set_ylim(0, 1)
+    probability_difference_ax.set_ylabel(
+        "Proability Difference\n|most-likely - next-most-likely|"
+    )
+    probability_difference_ax.set_ylim(0.01, 1)
     probability_difference_ax.margins(0)
-
 
     # Classification
     highest_probabilities = np.argmax(probabilities, axis=1)
@@ -310,7 +333,9 @@ for i, crossing in crossings.iterrows():
                 facecolor=wong_colours["orange"],
                 edgecolor=None,
                 alpha=alpha,
-                label="Prediction = Magnetosheath" if not magnetosheath_labelled else "",
+                label=(
+                    "Prediction = Magnetosheath" if not magnetosheath_labelled else ""
+                ),
             )
             magnetosheath_labelled = True
 
@@ -321,7 +346,9 @@ for i, crossing in crossings.iterrows():
                 facecolor=wong_colours["pink"],
                 edgecolor=None,
                 alpha=alpha,
-                label="Prediction = Magnetosphere" if not magnetosphere_labelled else "",
+                label=(
+                    "Prediction = Magnetosphere" if not magnetosphere_labelled else ""
+                ),
             )
             magnetosphere_labelled = True
 
@@ -340,7 +367,6 @@ for i, crossing in crossings.iterrows():
 
     mag_legend = ax.legend()
 
-
     ax.set_ylabel("Magnetic Field Strength [nT]")
     probability_ax.set_ylabel(f"Region Probability")
 
@@ -356,7 +382,61 @@ for i, crossing in crossings.iterrows():
     probability_ax.set_ylim(0, 1)
 
     # Add boundary crossing intervals
-    boundaries.Plot_Crossing_Intervals(ax, start, end, crossings, color="black")
+    boundaries.Plot_Crossing_Intervals(probability_ax, start, end, crossings, lw=3, color="black")
+
+    # FIND CROSSINGS
+    region_labels = np.empty_like(window_centres)
+    region_labels[is_magnetosheath] = "Magnetosheath"
+    region_labels[is_magnetosphere] = "Magnetosphere"
+    region_labels[is_solar_wind] = "Solar Wind"
+
+    new_crossings = np.where(region_labels[:-1] != region_labels[1:])[0]
+
+    if len(new_crossings) != 0:
+
+        new_crossings_info: list[dict] = []
+        for crossing_index in new_crossings:
+            # Crossings must be inside the moving average limit to be considered
+            if (crossing_index < (moving_average_size - 1) // 2) or (crossing_index > len(moving_average)):
+                continue
+
+            crossing_time = (
+                window_centres[crossing_index]
+                + (window_centres[crossing_index + 1] - window_centres[crossing_index]) / 2
+            )
+            region_before = region_labels[crossing_index]
+            region_after = region_labels[crossing_index + 1]
+
+            new_crossings_info.append(
+                {
+                    "Time": crossing_time,
+                    "Region Before": region_before,
+                    "Region After": region_after,
+                }
+            )
+
+        new_crossings_info = pd.DataFrame.from_dict(new_crossings_info)
+
+        # Remove crossings too close together
+        drop_mask = np.array([False] * len(new_crossings_info))
+
+        # Check time differences
+        threshold = dt.timedelta(seconds=1)
+
+        for i in range(1, len(new_crossings_info)):
+
+            if (new_crossings_info["Time"].iloc[i] - new_crossings_info["Time"].iloc[i - 1]) <= threshold:
+                drop_mask[i] = True
+                drop_mask[i-1] = True
+
+        cleaned_crossings = new_crossings_info[~drop_mask]
+
+        for ax in axes:
+            for t in cleaned_crossings["Time"]:
+                ax.axvline(t, color="black", ls="dotted")
+
+        print(new_crossings_info)
+        print(cleaned_crossings)
 
     plt.tight_layout()
     plt.show()
