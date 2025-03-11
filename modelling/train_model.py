@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, HistGradientBoostingClassifier
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
     accuracy_score,
@@ -20,7 +20,7 @@ from sklearn.model_selection import StratifiedKFold, train_test_split
 from tqdm import tqdm
 
 SEED = 0
-
+METHOD = "RF" # RF, GB, HGB
 
 def main():
     # Load extracted features
@@ -31,17 +31,24 @@ def main():
         "Magnetopause": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/magnetosphere_samples.csv",
     }
 
+    print("Loading data")
     features_data = []
     for region_type in inputs.keys():
         features_data.append(pd.read_csv(inputs[region_type]))
 
+    print("Data loaded")
+
     # Combine into one dataframe
     features_data = pd.concat(features_data, ignore_index=True).dropna()
+
+    # Use a reduced portion of data to train and test
+    # features_data = features_data.sample(frac=0.2)
 
     features_data = features_data.drop(
         columns=["Sample Start", "Sample End", "Boundary ID"]
     )
 
+    print("Formatting columns")
     expanded_feature_labels = ["|B|", "Bx", "By", "Bz"]
     for feature in ["Mean", "Median", "Standard Deviation", "Skew", "Kurtosis"]:
 
@@ -80,6 +87,7 @@ def main():
     y = features_data["Label"]  # Target
 
     # MODELLING #
+    print("Beginning Modeling")
     num_models = 10
     kfold = StratifiedKFold(n_splits=num_models, shuffle=True, random_state=SEED)
 
@@ -95,28 +103,42 @@ def main():
         X_train, X_test = X.iloc[train_index], X.iloc[test_index]
         y_train, y_test = y.iloc[train_index], y.iloc[test_index]
 
-        random_forest = RandomForestClassifier(n_estimators=100, random_state=SEED)
-        random_forest.fit(X_train, y_train)
+        match METHOD:
+            case "RF":
+                current_model = RandomForestClassifier(n_estimators=100, random_state=SEED, n_jobs=-1)
 
-        y_pred = random_forest.predict(X_test)
-        y_pred_training = random_forest.predict(X_train)
+            case "GB":
+                current_model = GradientBoostingClassifier(n_estimators=100, random_state=SEED)
+
+            case "HGB":
+                current_model = HistGradientBoostingClassifier(random_state=SEED)
+
+            case _:
+                raise ValueError(f"Invalid modelling method '{METHOD}'")
+
+        current_model.fit(X_train, y_train)
+
+        y_pred = current_model.predict(X_test)
+        y_pred_training = current_model.predict(X_train)
 
         test_accuracy = accuracy_score(y_test, y_pred)
         train_accuracy = accuracy_score(y_train, y_pred_training)
 
-        models.append(random_forest)
+        models.append(current_model)
         accuracies.append(test_accuracy)
         training_accuracies.append(train_accuracy)
         confusion_matrices.append(confusion_matrix(y_test, y_pred))
 
     # Compute average accuracy across all folds
     avg_test_accuracy = np.mean(accuracies)
+    avg_test_accuracy_error = np.std(accuracies)
     avg_train_accuracy = np.mean(training_accuracies)
+    avg_train_accuracy_error = np.std(training_accuracies)
     avg_confusion_matrix = np.mean(confusion_matrices, axis=0)
     confusion_matrix_std = np.std(confusion_matrices, axis=0)
 
-    print(f"\nAverage Test Accuracy: {avg_test_accuracy:.5f}")
-    print(f"Average Training Accuracy: {avg_train_accuracy:.5f}")
+    print(f"\nAverage Test Accuracy: {avg_test_accuracy:.5f} +/- {avg_test_accuracy_error:.5f}")
+    print(f"Average Training Accuracy: {avg_train_accuracy:.8f} +/- {avg_train_accuracy_error:.8f}")
 
     # The following will simply use the last random forest model which was generated
 
@@ -125,30 +147,31 @@ def main():
         Show_Training_Spread(X_train)
     """
 
-    importances = np.array([model.feature_importances_ for model in models]).T
-    mean_importances = np.mean(importances, axis=1)
-    feature_names = X.columns
+    if METHOD == "RF":
+        importances = np.array([model.feature_importances_ for model in models]).T
+        mean_importances = np.mean(importances, axis=1)
+        feature_names = X.columns
 
-    # Sorting
-    sorted_indices = np.argsort(mean_importances)[::-1]
-    importances = importances[sorted_indices, :]  # Reorder importances
-    mean_importances = mean_importances[sorted_indices]  # Reorder mean values
-    feature_names = [feature_names[i] for i in sorted_indices]  # Reorder feature names
+        # Sorting
+        sorted_indices = np.argsort(mean_importances)[::-1]
+        importances = importances[sorted_indices, :]  # Reorder importances
+        mean_importances = mean_importances[sorted_indices]  # Reorder mean values
+        feature_names = [feature_names[i] for i in sorted_indices]  # Reorder feature names
 
-    # Create a boxplot
-    plt.figure(figsize=(12, 6))
+        # Create a boxplot
+        plt.figure(figsize=(12, 6))
 
-    y_positions = np.arange(len(feature_names))
+        y_positions = np.arange(len(feature_names))
 
-    plt.barh(y_positions, mean_importances, color="white", edgecolor="black")
-    sns.boxplot(data=importances.T, orient="h", color="indianred")
+        plt.barh(y_positions, mean_importances, color="white", edgecolor="black")
+        sns.boxplot(data=importances.T, orient="h", color="indianred")
 
-    plt.yticks(y_positions, feature_names)  # Ensure feature names are correctly positioned
+        plt.yticks(y_positions, feature_names)  # Ensure feature names are correctly positioned
 
-    # Add feature names as labels
-    plt.yticks(ticks=np.arange(len(feature_names)), labels=feature_names)
-    plt.xlabel("Feature Importance")
-    plt.title(f"Feature Importance Distribution Across {num_models} Folds")
+        # Add feature names as labels
+        plt.yticks(ticks=np.arange(len(feature_names)), labels=feature_names)
+        plt.xlabel("Feature Importance")
+        plt.title(f"Feature Importance Distribution Across {num_models} Folds")
 
     print("\nConfusion Matrix\n")
     print(avg_confusion_matrix)
@@ -163,7 +186,7 @@ def main():
         annot=True,
         fmt=".2f",
         cmap="viridis",
-        cbar=True,
+        cbar=True, 
         xticklabels=["Magnetosheath", "Magnetosphere", "Solar Wind"],
         yticklabels=["Magnetosheath", "Magnetosphere", "Solar Wind"],
     )
@@ -186,8 +209,21 @@ def main():
 
     plt.show()
 
+    match METHOD:
+        case "RF":
+            output_file = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/multi_model_rf" 
+
+        case "GB":
+            output_file = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/multi_model_gb" 
+
+        case "HGB":
+            output_file = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/multi_model_hgb" 
+
+        case _:
+            raise ValueError(f"Invalid modelling method '{METHOD}'")
+
     with open(
-        "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/multi_model_rf",
+        output_file,
         "wb",
     ) as file:
         pickle.dump(models, file)
