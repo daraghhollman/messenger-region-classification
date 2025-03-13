@@ -6,6 +6,7 @@ solar wind, magnetosheath, and magnetosphere.
 import pickle
 
 import matplotlib.pyplot as plt
+import matplotlib.colors
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -41,6 +42,8 @@ def main():
     # Combine into one dataframe
     features_data = pd.concat(features_data, ignore_index=True).dropna()
 
+    print(f"Length: {len(features_data)}")
+
     # Use a reduced portion of data to train and test
     # features_data = features_data.sample(frac=0.2)
 
@@ -71,6 +74,25 @@ def main():
         columns=["Mean", "Median", "Standard Deviation", "Skew", "Kurtosis"]
     )
 
+    # Feature Removal
+    features_data = features_data.drop(columns=[
+        "Skew |B|",
+        "Skew Bx",
+        "Skew By",
+        "Skew Bz",
+
+        "Kurtosis |B|",
+        "Kurtosis Bx",
+        "Kurtosis By",
+        "Kurtosis Bz",
+
+        "Median By",
+        "Mean By",
+
+        # "Local Time (hrs)",
+        # "Y MSM' (radii)",
+    ])
+
     # Try with and without bs and mp magnetosheath as separate features
     features_data["Label"] = features_data["Label"].replace(
         "BS Magnetosheath", "Magnetosheath"
@@ -88,7 +110,7 @@ def main():
 
     # MODELLING #
     print("Beginning Modeling")
-    num_models = 10
+    num_models = 3
     kfold = StratifiedKFold(n_splits=num_models, shuffle=True, random_state=SEED)
 
     models = []
@@ -105,7 +127,7 @@ def main():
 
         match METHOD:
             case "RF":
-                current_model = RandomForestClassifier(n_estimators=100, random_state=SEED, n_jobs=-1)
+                current_model = RandomForestClassifier(n_estimators=100, max_depth=15, random_state=SEED, n_jobs=-1)
 
             case "GB":
                 current_model = GradientBoostingClassifier(n_estimators=100, random_state=SEED)
@@ -189,6 +211,7 @@ def main():
         cbar=True, 
         xticklabels=["Magnetosheath", "Magnetosphere", "Solar Wind"],
         yticklabels=["Magnetosheath", "Magnetosphere", "Solar Wind"],
+        norm=matplotlib.colors.LogNorm(),
     )
     # plt.title("Average Confusion Matrix with Std")
     plt.xlabel("Predicted Label")
@@ -204,7 +227,7 @@ def main():
                 ha="center",
                 va="bottom",
                 fontsize=10,
-                color="black" if ((i == 0) and (j == 0)) else "white",
+                color="black" if i == j else "white",
             )
 
     plt.show()
