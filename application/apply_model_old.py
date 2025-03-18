@@ -317,7 +317,7 @@ for i, crossing in crossings.iterrows():
     )
 
     probability_difference_ax.legend()
-    # probability_difference_ax.set_yscale("log")
+    #probability_difference_ax.set_yscale("log")
     probability_difference_ax.set_ylabel(
         "Proability Difference\n|most-likely - next-most-likely|"
     )
@@ -331,7 +331,55 @@ for i, crossing in crossings.iterrows():
     is_magnetosphere = highest_probabilities == 1
     is_solar_wind = highest_probabilities == 2
 
+    # Add region shading
+    # Iterate through each window
+    magnetosheath_labelled = False
+    magnetosphere_labelled = False
+    solar_wind_labelled = False
+    for i in range(len(window_centres) - 1):
+
+        alpha = 0.5
+
+        if is_magnetosheath[i]:
+            ax.axvspan(
+                window_centres[i] - (dt.timedelta(seconds=step_size)) / 2,
+                window_centres[i] + (dt.timedelta(seconds=step_size)) / 2,
+                facecolor=wong_colours["orange"],
+                edgecolor=None,
+                alpha=alpha,
+                label=(
+                    "Prediction = Magnetosheath" if not magnetosheath_labelled else ""
+                ),
+            )
+            magnetosheath_labelled = True
+
+        elif is_magnetosphere[i]:
+            ax.axvspan(
+                window_centres[i] - (dt.timedelta(seconds=step_size)) / 2,
+                window_centres[i] + (dt.timedelta(seconds=step_size)) / 2,
+                facecolor=wong_colours["pink"],
+                edgecolor=None,
+                alpha=alpha,
+                label=(
+                    "Prediction = Magnetosphere" if not magnetosphere_labelled else ""
+                ),
+            )
+            magnetosphere_labelled = True
+
+        elif is_solar_wind[i]:
+            ax.axvspan(
+                window_centres[i] - (dt.timedelta(seconds=step_size)) / 2,
+                window_centres[i] + (dt.timedelta(seconds=step_size)) / 2,
+                facecolor=wong_colours["yellow"],
+                edgecolor=None,
+                alpha=alpha,
+                label="Prediction = Solar Wind" if not solar_wind_labelled else "",
+            )
+            solar_wind_labelled = True
+
     probability_ax.legend()
+
+    mag_legend = ax.legend()
 
     ax.set_ylabel("Magnetic Field Strength [nT]")
     probability_ax.set_ylabel(f"Region Probability")
@@ -348,9 +396,7 @@ for i, crossing in crossings.iterrows():
     probability_ax.set_ylim(0, 1)
 
     # Add boundary crossing intervals
-    boundaries.Plot_Crossing_Intervals(
-        probability_ax, start, end, crossings, lw=3, color="black"
-    )
+    boundaries.Plot_Crossing_Intervals(probability_ax, start, end, crossings, lw=3, color="black")
 
     # FIND CROSSINGS
     region_labels = np.empty_like(window_centres)
@@ -369,7 +415,7 @@ for i, crossing in crossings.iterrows():
 
         for i in range(len(crossing_indices) - 1):
             current_crossing_index = crossing_indices[i]
-
+            
             if i == len(crossing_indices) - 1:
                 # Assign to be the end of the series
                 next_crossing_index = len(window_centres)
@@ -383,134 +429,50 @@ for i, crossing in crossings.iterrows():
 
             regions.append(
                 {
-                    "Start Time": window_centres[current_crossing_index]
-                    + dt.timedelta(seconds=step_size / 2),
-                    "End Time": window_centres[next_crossing_index]
-                    + dt.timedelta(seconds=step_size / 2),
+                    "Start Time": window_centres[current_crossing_index] + dt.timedelta(seconds=step_size / 2),
+                    "End Time": window_centres[next_crossing_index] + dt.timedelta(seconds=step_size / 2),
                     "Duration (seconds)": (
                         window_centres[next_crossing_index]
                         - window_centres[current_crossing_index]
                     ).total_seconds(),
                     "Label": region_labels[middle_index],
                     # Including the values at the crossing points
-                    "Confidence": 1
+                    "Confidence (Mean Method)": 1
                     - np.mean(
-                        probability_ratio[
-                            current_crossing_index : next_crossing_index + 1
-                        ]
+                        probability_ratio[current_crossing_index : next_crossing_index + 1]
+                    ),
+                    "Confidence (Median Method)": 1
+                    - np.median(
+                        probability_ratio[current_crossing_index : next_crossing_index + 1]
                     ),
                 }
             )
+        
+        region_data = pd.DataFrame(regions)
+
+        # significant_regions = region_data
+        significant_regions = region_data.loc[(region_data["Duration (seconds)"] > 40) | (region_data["Confidence (Mean Method)"] > 0.56)]
+        # Drop the last region as we don't want to place a crossing on the left
+        # significant_regions = significant_regions[:-1]
+        
+        new_crossing_times = list(set(significant_regions["Start Time"].tolist() + significant_regions["End Time"].tolist()))
+
+        probability_difference_ax.scatter(region_data["Start Time"] + (region_data["End Time"] - region_data["Start Time"]) / 2, region_data["Confidence (Mean Method)"])
+        
+
 
     elif len(crossing_indices) == 1:
-        regions = []
-        # ONLY ONE CHANGE IN REGION
-        # CURRENT CODE WILL CRASH HERE!
+        new_crossing_times = np.array(window_centres)[crossing_indices]
 
     else:
         print("No crossings detected")
-        print("Skipping...")
-        continue
+        new_crossing_times = [np.nan]
 
-    # Add in the first and last region
-    regions.insert(
-        0,
-        {
-            "Start Time": window_centres[0] - dt.timedelta(seconds=step_size / 2),
-            "End Time": regions[0]["Start Time"],
-            "Duration (seconds)": (
-                regions[0]["Start Time"] - window_centres[0] - dt.timedelta(seconds=step_size / 2)
-            ).total_seconds(),
-            "Label": region_labels[0],
-            "Confidence": np.nan,  # Assume good confidence for first and last
-        },
-    )
-    regions.insert(
-        -1,
-        {
-            "Start Time": regions[-1]["End Time"],
-            "End Time": window_centres[-1] + dt.timedelta(seconds=step_size / 2), # end of data
-            "Duration (seconds)": (
-                window_centres[-1] + dt.timedelta(seconds=step_size / 2) - regions[-1]["Start Time"]
-            ).total_seconds(),
-            "Label": region_labels[-2], # Weird behaviour with last value of this list not being accurate.
-            "Confidence": np.nan,  # Assume good confidence for first and last
-        },
-    )
 
-    print(region_labels)
+    for t in new_crossing_times:
+        for ax in axes:
+            ax.axvline(t, color="black", ls="dotted")
 
-    region_data = pd.DataFrame(regions)
-
-    probability_difference_ax.scatter(
-        region_data["Start Time"]
-        + (region_data["End Time"] - region_data["Start Time"]) / 2,
-        region_data["Confidence"],
-    )
-
-    region_data.loc[
-        ~(
-            (region_data["Duration (seconds)"] >= 40)
-            | (region_data["Confidence"] > 0.56)
-        ),
-        "Label",
-    ] = "Unknown"
-
-    # Add region shading
-    # Iterate through each window
-    magnetosheath_labelled = False
-    magnetosphere_labelled = False
-    solar_wind_labelled = False
-    for _, region in region_data.iterrows():
-
-        alpha = 0.5
-
-        label = region["Label"]
-
-        if label == "Magnetosheath":
-            ax.axvspan(
-                region["Start Time"],
-                region["End Time"],
-                facecolor=wong_colours["orange"],
-                edgecolor=None,
-                alpha=alpha,
-                label=(
-                    "Prediction = Magnetosheath" if not magnetosheath_labelled else ""
-                ),
-            )
-            magnetosheath_labelled = True
-
-        elif label == "Magnetosphere":
-            ax.axvspan(
-                region["Start Time"],
-                region["End Time"],
-                facecolor=wong_colours["pink"],
-                edgecolor=None,
-                alpha=alpha,
-                label=(
-                    "Prediction = Magnetosphere" if not magnetosphere_labelled else ""
-                ),
-            )
-            magnetosphere_labelled = True
-
-        elif label == "Solar Wind":
-            ax.axvspan(
-                region["Start Time"],
-                region["End Time"],
-                facecolor=wong_colours["yellow"],
-                edgecolor=None,
-                alpha=alpha,
-                label="Prediction = Solar Wind" if not solar_wind_labelled else "",
-            )
-            solar_wind_labelled = True
-
-        elif label == "Unknown":
-            continue
-
-        else:
-            raise ValueError(f"Unknown region label {label}")
-
-    mag_legend = ax.legend()
 
     plt.tight_layout()
     plt.show()

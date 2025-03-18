@@ -204,8 +204,6 @@ for i, crossing in crossings.iterrows():
         continue
 
     regions = []
-    # As the beginning and end regions start and finish arbitrarly,
-    # we exclude them from the metrics.
     # Exclude the last region as i+1 is not defined
     for i in range(len(crossing_indices[:-1])):
         current_crossing_index = crossing_indices[i]
@@ -234,7 +232,9 @@ for i, crossing in crossings.iterrows():
             }
         )
 
-    all_regions.extend(regions)
+    # As the beginning and end regions start and finish arbitrarly,
+    # we exclude them from the metrics.
+    all_regions.extend(regions[1:-1])
 
 region_data = pd.DataFrame(all_regions)
 
