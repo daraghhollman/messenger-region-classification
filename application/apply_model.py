@@ -419,7 +419,9 @@ for i, crossing in crossings.iterrows():
             "Start Time": window_centres[0] - dt.timedelta(seconds=step_size / 2),
             "End Time": regions[0]["Start Time"],
             "Duration (seconds)": (
-                regions[0]["Start Time"] - window_centres[0] - dt.timedelta(seconds=step_size / 2)
+                regions[0]["Start Time"]
+                - window_centres[0]
+                - dt.timedelta(seconds=step_size / 2)
             ).total_seconds(),
             "Label": region_labels[0],
             "Confidence": np.nan,  # Assume good confidence for first and last
@@ -429,11 +431,16 @@ for i, crossing in crossings.iterrows():
         -1,
         {
             "Start Time": regions[-1]["End Time"],
-            "End Time": window_centres[-1] + dt.timedelta(seconds=step_size / 2), # end of data
+            "End Time": window_centres[-1]
+            + dt.timedelta(seconds=step_size / 2),  # end of data
             "Duration (seconds)": (
-                window_centres[-1] + dt.timedelta(seconds=step_size / 2) - regions[-1]["Start Time"]
+                window_centres[-1]
+                + dt.timedelta(seconds=step_size / 2)
+                - regions[-1]["Start Time"]
             ).total_seconds(),
-            "Label": region_labels[-2], # Weird behaviour with last value of this list not being accurate.
+            "Label": region_labels[
+                -2
+            ],  # Weird behaviour with last value of this list not being accurate.
             "Confidence": np.nan,  # Assume good confidence for first and last
         },
     )
@@ -514,3 +521,107 @@ for i, crossing in crossings.iterrows():
 
     plt.tight_layout()
     plt.show()
+
+    # DETERMINE CROSSINGS
+    new_crossings = []
+    for region_id, region in region_data.iterrows():
+
+        # We place crossings at the end of regions
+        # Need to skip last region
+
+        if region_id == len(region_data) - 1:
+            break
+
+        next_region = region_data.loc[region_id + 1]
+
+        transition = ""
+
+        if region["Label"] == "Solar Wind":
+
+            match next_region["Label"]:
+
+                case "Magnetosheath":
+                    transition = "BS_IN"
+
+                case "Unknown":
+                    trainsition = "UKN (SW -> UKN)"
+
+                case "Solar Wind":
+                    continue
+
+                case _:
+                    raise ValueError(
+                        f"Unknown region transition: Solar Wind -> {next_region['Label']}"
+                    )
+
+        elif region["Label"] == "Magnetosheath":
+
+            match next_region["Label"]:
+
+                case "Solar Wind":
+                    transition = "BS_OUT"
+
+                case "Magnetosphere":
+                    transition = "MP_IN"
+
+                case "Unknown":
+                    transition = "UKN (MSh -> UKN)"
+
+                case "Magnetosheath":
+                    continue
+
+                case _:
+                    raise ValueError(
+                        f"Unknown region transition: Magnetosheath -> {next_region['Label']}"
+                    )
+
+        elif region["Label"] == "Magnetosphere":
+
+            match next_region["Label"]:
+
+                case "Magnetosheath":
+                    transition = "MP_OUT"
+
+                case "Unknown":
+                    transition = "UKN (MSp -> UKN)"
+
+                case "Magnetosphere":
+                    continue
+
+                case _:
+                    raise ValueError(
+                        f"Unknown region transition: Magnetosphere -> {next_region['Label']}"
+                    )
+
+        elif region["Label"] == "Unknown":
+
+            match next_region["Label"]:
+
+                case "Solar Wind":
+                    transition = "UKN (UKN -> SW)"
+
+                case "Magnetosheath":
+                    transition = "UKN (UKN -> MSh)"
+
+                case "Magnetosphere":
+                    transition = "UKN (UKN -> MSp)"
+
+                case "Unknown":
+                    continue
+
+                case _:
+                    raise ValueError(
+                        f"Unknown region transition: Unknown -> {next_region['Label']}"
+                    )
+
+        else:
+            raise ValueError(f"Unknown region label: {region['Label']}")
+
+        new_crossing = {
+            "Time": region["End Time"],
+            "Transition": transition,
+        }
+
+        new_crossings.append(new_crossing)
+
+    print(new_crossings)
