@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import scipy.stats
 import sklearn.ensemble
+from adjustText import adjust_text
 from hermpy import boundaries, mag, plotting, trajectory, utils
 from skimage.restoration import denoise_tv_chambolle
 from tqdm import tqdm
@@ -188,9 +189,9 @@ for i, crossing in crossings.iterrows():
     fig, axes = plt.subplots(
         3, 1, gridspec_kw={"height_ratios": [3, 1, 1]}, sharex=True, figsize=(8, 6)
     )
-    (ax, probability_ax, probability_difference_ax) = axes
+    (mag_ax, probability_ax, probability_difference_ax) = axes
 
-    ax.plot(
+    mag_ax.plot(
         data["date"],
         data["Bx"],
         color=wong_colours["red"],
@@ -198,7 +199,7 @@ for i, crossing in crossings.iterrows():
         alpha=0.7,
         label="$B_x$",
     )
-    ax.plot(
+    mag_ax.plot(
         data["date"],
         data["By"],
         color=wong_colours["green"],
@@ -206,7 +207,7 @@ for i, crossing in crossings.iterrows():
         alpha=0.7,
         label="$B_y$",
     )
-    ax.plot(
+    mag_ax.plot(
         data["date"],
         data["Bz"],
         color=wong_colours["blue"],
@@ -214,7 +215,7 @@ for i, crossing in crossings.iterrows():
         alpha=0.7,
         label="$B_z$",
     )
-    ax.plot(data["date"], data["|B|"], color=wong_colours["black"], lw=1, label="$|B|$")
+    mag_ax.plot(data["date"], data["|B|"], color=wong_colours["black"], lw=1, label="$|B|$")
 
     probability_ax.plot(
         window_centres,
@@ -333,17 +334,17 @@ for i, crossing in crossings.iterrows():
 
     probability_ax.legend()
 
-    ax.set_ylabel("Magnetic Field Strength [nT]")
+    mag_ax.set_ylabel("Magnetic Field Strength [nT]")
     probability_ax.set_ylabel(f"Region Probability")
 
-    ax.set_title(
+    mag_ax.set_title(
         f"Model Application (Overlapping Sliding Window)\nWindow Size: {window_size} s    Step Size: {step_size} s"
     )
 
-    ax.margins(0)
+    mag_ax.margins(0)
     probability_ax.margins(0)
     fig.subplots_adjust(hspace=0)
-    plotting.Add_Tick_Ephemeris(ax)
+    plotting.Add_Tick_Ephemeris(mag_ax)
 
     probability_ax.set_ylim(0, 1)
 
@@ -453,7 +454,12 @@ for i, crossing in crossings.iterrows():
         region_data["Start Time"]
         + (region_data["End Time"] - region_data["Start Time"]) / 2,
         region_data["Confidence"],
+        color=wong_colours["blue"],
+        s=40,
+        zorder=5,
     )
+
+    probability_difference_ax.axhline(0.56, color="black", ls="dashed")
 
     region_data.loc[
         ~(
@@ -475,7 +481,7 @@ for i, crossing in crossings.iterrows():
         label = region["Label"]
 
         if label == "Magnetosheath":
-            ax.axvspan(
+            mag_ax.axvspan(
                 region["Start Time"],
                 region["End Time"],
                 facecolor=wong_colours["orange"],
@@ -488,7 +494,7 @@ for i, crossing in crossings.iterrows():
             magnetosheath_labelled = True
 
         elif label == "Magnetosphere":
-            ax.axvspan(
+            mag_ax.axvspan(
                 region["Start Time"],
                 region["End Time"],
                 facecolor=wong_colours["pink"],
@@ -501,7 +507,7 @@ for i, crossing in crossings.iterrows():
             magnetosphere_labelled = True
 
         elif label == "Solar Wind":
-            ax.axvspan(
+            mag_ax.axvspan(
                 region["Start Time"],
                 region["End Time"],
                 facecolor=wong_colours["yellow"],
@@ -517,10 +523,7 @@ for i, crossing in crossings.iterrows():
         else:
             raise ValueError(f"Unknown region label {label}")
 
-    mag_legend = ax.legend()
-
-    plt.tight_layout()
-    plt.show()
+    mag_legend = mag_ax.legend()
 
     # DETERMINE CROSSINGS
     new_crossings = []
@@ -625,3 +628,24 @@ for i, crossing in crossings.iterrows():
         new_crossings.append(new_crossing)
 
     print(new_crossings)
+
+    crossing_labels = []
+    for index, c in enumerate(new_crossings):
+        for ax in axes:
+            ax.axvline(c["Time"], color="black", ls="dotted")
+
+            """
+        text = mag_ax.text(
+            c["Time"] - 10, 20 if index%2 == 0 else -20, s=c["Transition"], ha="center", va="center", rotation=90
+        )
+        crossing_labels.append(text)
+            """
+
+    """
+    adjust_text(
+        crossing_labels, avoid_self=False, ensure_inside_axes=True, arrowprops=dict(arrowstyle="->", color="black")
+    )
+    """
+
+    plt.tight_layout()
+    plt.show()
