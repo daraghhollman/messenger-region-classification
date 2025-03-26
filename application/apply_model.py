@@ -9,6 +9,7 @@ import scipy.stats
 import sklearn.ensemble
 from adjustText import adjust_text
 from hermpy import boundaries, mag, plotting, trajectory, utils
+from pandas.core import window
 from skimage.restoration import denoise_tv_chambolle
 from tqdm import tqdm
 
@@ -28,12 +29,6 @@ wong_colours = {
 
 crossings = boundaries.Load_Crossings(utils.User.CROSSING_LISTS["Philpott"])
 
-"""
-crossings = crossings.loc[
-    crossings["Start Time"].between(dt.datetime(2013, 5, 1, 14), dt.datetime(2013, 5, 2, 16))
-]
-"""
-
 crossings = crossings.sample(frac=1)
 
 time_buffer = dt.timedelta(minutes=10)
@@ -42,39 +37,32 @@ time_buffer = dt.timedelta(minutes=10)
 window_size = 10  # seconds. How large of a window to feed to the random forest
 step_size = 1  # seconds. How far should the window jump each time
 
-smoothing = "None"  # "TVD", "BoxCar", "None"
-smoothing_size = 5
-
-remove_smallest_regions = True
-region_length_minimum = 5  # times step size
-
-skip_low_success = False
-minimum_success_rate = 0.6
-
 # Load Model
 print("Loading model")
 
 all_models = {
-    "Random Forest": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/model_rf_region_classifier",
+    "Random Forest": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/three_class_random_forest",
     "Stratified Random Forest": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/model_stratified_three_region_classifier",
     "New Random Forest": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/model_new",
     "Multi_Model_RF": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/multi_model_rf",
     "Multi_Model_HGB": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/multi_model_hgb",
 }
 
-with open(all_models["Multi_Model_RF"], "rb") as file:
-    models = pickle.load(file)
+with open(all_models["Random Forest"], "rb") as file:
+    model = pickle.load(file)
 
-model_features = sorted(models[-1].feature_names_in_)
+model_features = sorted(model.feature_names_in_)
 
 
 # Function to get window features in parallel
 def Get_Window_Features(input):
     window_start, window_end = input
 
-    data_section = data.query("@window_start <= date <= @window_end")
+    # data_section = data.query("@window_start <= date <= @window_end")
+    data_section = data.loc[data["date"].between(window_start, window_end)]
 
     if data_section.empty:
+        print(window_start, window_end)
         return None
 
     # Find features
@@ -122,17 +110,14 @@ def Get_Window_Features(input):
     return X
 
 
-def Multi_Model_Predict(models: list[sklearn.ensemble.RandomForestClassifier], samples):
+def Predict(model, samples):
     """
     Average the predictions from multiple models
     """
 
-    predictions = np.array([model.predict_proba(samples) for model in models])
+    predictions = model.predict_proba(samples)
 
-    probabilities = np.mean(predictions, axis=0)
-    probabilities_stds = np.std(predictions, axis=0)
-
-    return probabilities, probabilities_stds
+    return predictions
 
 
 for i, crossing in crossings.iterrows():
@@ -149,8 +134,13 @@ for i, crossing in crossings.iterrows():
 
     windows = [
         (window_start, window_start + dt.timedelta(seconds=window_size))
-        for window_start in pd.date_range(start=start, end=end, freq=f"{step_size}s")
+        for window_start in pd.date_range(
+            start=start,
+            end=end - dt.timedelta(seconds=window_size),
+            freq=f"{step_size}s",
+        )
     ]
+
     window_centres = [
         window_start + (window_end - window_start) / 2
         for window_start, window_end in windows
@@ -173,15 +163,12 @@ for i, crossing in crossings.iterrows():
                 missing.append([1, 1, 1])
 
     probabilities = np.full((len(windows), 3), np.nan)
-    probability_errors = np.full((len(windows), 3), np.nan)
 
     valid_indices = np.array(missing)[:, 0] == 0
 
     if samples:  # Check if we have any samples
         samples = pd.concat(samples, ignore_index=True)
-        probabilities[valid_indices, :], probability_errors[valid_indices, :] = (
-            Multi_Model_Predict(models, samples)
-        )
+        probabilities[valid_indices, :] = Predict(model, samples)
 
     else:
         raise ValueError("All samples missing")
@@ -215,7 +202,9 @@ for i, crossing in crossings.iterrows():
         alpha=0.7,
         label="$B_z$",
     )
-    mag_ax.plot(data["date"], data["|B|"], color=wong_colours["black"], lw=1, label="$|B|$")
+    mag_ax.plot(
+        data["date"], data["|B|"], color=wong_colours["black"], lw=1, label="$|B|$"
+    )
 
     probability_ax.plot(
         window_centres,
@@ -223,13 +212,6 @@ for i, crossing in crossings.iterrows():
         color=wong_colours["orange"],
         lw=2,
         label="Magnetosheath",
-    )
-    probability_ax.fill_between(
-        window_centres,
-        probabilities[:, 0] - probability_errors[:, 0],
-        probabilities[:, 0] + probability_errors[:, 0],
-        color=wong_colours["orange"],
-        alpha=0.5,
     )
 
     probability_ax.plot(
@@ -239,13 +221,6 @@ for i, crossing in crossings.iterrows():
         lw=2,
         label="Magnetosphere",
     )
-    probability_ax.fill_between(
-        window_centres,
-        probabilities[:, 1] - probability_errors[:, 1],
-        probabilities[:, 1] + probability_errors[:, 1],
-        color=wong_colours["pink"],
-        alpha=0.5,
-    )
 
     probability_ax.plot(
         window_centres,
@@ -253,13 +228,6 @@ for i, crossing in crossings.iterrows():
         color=wong_colours["yellow"],
         lw=2,
         label="Solar Wind",
-    )
-    probability_ax.fill_between(
-        window_centres,
-        probabilities[:, 2] - probability_errors[:, 2],
-        probabilities[:, 2] + probability_errors[:, 2],
-        color=wong_colours["yellow"],
-        alpha=0.5,
     )
 
     # Ratio plot
@@ -287,34 +255,6 @@ for i, crossing in crossings.iterrows():
         moving_average,
         color=wong_colours["red"],
         label=f"Moving Average order {moving_average_size}",
-    )
-
-    # We can also add the average 3 sigma error of all models
-    average_probability_error = np.mean(probability_errors, axis=1)
-
-    probability_difference_ax.fill_between(
-        window_centres,
-        0,
-        1 * average_probability_error,
-        label=r"$1\sigma$",
-        color="grey",
-        alpha=0.8,
-    )
-    probability_difference_ax.fill_between(
-        window_centres,
-        0,
-        2 * average_probability_error,
-        label=r"$2\sigma$",
-        color="grey",
-        alpha=0.6,
-    )
-    probability_difference_ax.fill_between(
-        window_centres,
-        0,
-        3 * average_probability_error,
-        label=r"$3\sigma$",
-        color="grey",
-        alpha=0.4,
     )
 
     probability_difference_ax.legend()
@@ -372,15 +312,10 @@ for i, crossing in crossings.iterrows():
             current_crossing_index = crossing_indices[i]
 
             if i == len(crossing_indices) - 1:
-                # Assign to be the end of the series
-                next_crossing_index = len(window_centres)
+                break
 
             else:
                 next_crossing_index = crossing_indices[i + 1]
-
-            middle_index = current_crossing_index + int(
-                (next_crossing_index - current_crossing_index) / 2
-            )
 
             regions.append(
                 {
@@ -392,7 +327,7 @@ for i, crossing in crossings.iterrows():
                         window_centres[next_crossing_index]
                         - window_centres[current_crossing_index]
                     ).total_seconds(),
-                    "Label": region_labels[middle_index],
+                    "Label": region_labels[current_crossing_index + 1],
                     # Including the values at the crossing points
                     "Confidence": 1
                     - np.mean(
@@ -403,51 +338,78 @@ for i, crossing in crossings.iterrows():
                 }
             )
 
+        # Add in the first and last region
+        regions.insert(
+            0,
+            {
+                "Start Time": window_centres[0] - dt.timedelta(seconds=step_size / 2),
+                "End Time": regions[0]["Start Time"],
+                "Duration (seconds)": (
+                    regions[0]["Start Time"]
+                    - (window_centres[0] - dt.timedelta(seconds=step_size / 2))
+                ).total_seconds(),
+                "Label": region_labels[0],
+                "Confidence": 1,  # Assume good confidence for first and last
+            },
+        )
+        regions.append(
+            {
+                "Start Time": regions[-1]["End Time"],
+                "End Time": window_centres[-1] + dt.timedelta(seconds=step_size / 2),
+                "Duration (seconds)": (
+                    window_centres[-1]
+                    + dt.timedelta(seconds=step_size / 2)
+                    - regions[-1]["Start Time"]
+                ).total_seconds(),
+                "Label": region_labels[-1],
+                "Confidence": 1,  # Assume good confidence for first and last
+            },
+        )
+
     elif len(crossing_indices) == 1:
         regions = []
         # ONLY ONE CHANGE IN REGION
-        # CURRENT CODE WILL CRASH HERE!
+        regions.append(
+            {
+                "Start Time": window_centres[0] - dt.timedelta(seconds=step_size / 2),
+                "End Time": window_centres[crossing_indices[0]]
+                + dt.timedelta(seconds=step_size / 2),
+                "Duration (seconds)": (
+                    window_centres[crossing_indices[0]]
+                    + dt.timedelta(seconds=step_size / 2)
+                    - (window_centres[0] - dt.timedelta(seconds=step_size / 2))
+                ).total_seconds(),
+                "Label": region_labels[crossing_indices[0] - 1],
+                # Including the values at the crossing points
+                "Confidence": 1
+                - np.mean(probability_ratio[0 : crossing_indices[0] + 1]),
+            }
+        )
+        regions.append(
+            {
+                "Start Time": window_centres[crossing_indices[0]]
+                + dt.timedelta(seconds=step_size / 2),
+                "End Time": window_centres[-1] + dt.timedelta(seconds=step_size / 2),
+                "Duration (seconds)": (
+                    window_centres[-1]
+                    + dt.timedelta(seconds=step_size / 2)
+                    - (
+                        window_centres[crossing_indices[0]]
+                        + dt.timedelta(seconds=step_size / 2)
+                    )
+                ).total_seconds(),
+                "Label": region_labels[crossing_indices[0] + 1],
+                # Including the values at the crossing points
+                "Confidence": 1 - np.mean(probability_ratio[crossing_indices[0] : -1]),
+            }
+        )
 
     else:
         print("No crossings detected")
         print("Skipping...")
         continue
 
-    # Add in the first and last region
-    regions.insert(
-        0,
-        {
-            "Start Time": window_centres[0] - dt.timedelta(seconds=step_size / 2),
-            "End Time": regions[0]["Start Time"],
-            "Duration (seconds)": (
-                regions[0]["Start Time"]
-                - window_centres[0]
-                - dt.timedelta(seconds=step_size / 2)
-            ).total_seconds(),
-            "Label": region_labels[0],
-            "Confidence": np.nan,  # Assume good confidence for first and last
-        },
-    )
-    regions.insert(
-        -1,
-        {
-            "Start Time": regions[-1]["End Time"],
-            "End Time": window_centres[-1]
-            + dt.timedelta(seconds=step_size / 2),  # end of data
-            "Duration (seconds)": (
-                window_centres[-1]
-                + dt.timedelta(seconds=step_size / 2)
-                - regions[-1]["Start Time"]
-            ).total_seconds(),
-            "Label": region_labels[
-                -2
-            ],  # Weird behaviour with last value of this list not being accurate.
-            "Confidence": np.nan,  # Assume good confidence for first and last
-        },
-    )
-
-    print(region_labels)
-
+    print(regions)
     region_data = pd.DataFrame(regions)
 
     probability_difference_ax.scatter(
@@ -633,19 +595,6 @@ for i, crossing in crossings.iterrows():
     for index, c in enumerate(new_crossings):
         for ax in axes:
             ax.axvline(c["Time"], color="black", ls="dotted")
-
-            """
-        text = mag_ax.text(
-            c["Time"] - 10, 20 if index%2 == 0 else -20, s=c["Transition"], ha="center", va="center", rotation=90
-        )
-        crossing_labels.append(text)
-            """
-
-    """
-    adjust_text(
-        crossing_labels, avoid_self=False, ensure_inside_axes=True, arrowprops=dict(arrowstyle="->", color="black")
-    )
-    """
 
     plt.tight_layout()
     plt.show()
