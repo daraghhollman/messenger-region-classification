@@ -1,31 +1,31 @@
+import contextlib
 import datetime as dt
 import pickle
 
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
-import contextlib
 from hermpy import boundaries, mag, trajectory, utils
 from tqdm import tqdm
 
-n_jobs = 6
+n_jobs = -1
 
 # Load Model
-model_path = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/multi_model_rf"
+model_path = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/three_class_random_forest"
 print(f"Loading model from {model_path}")
 with open(
     model_path,
     "rb",
 ) as file:
-    models = pickle.load(file)
-model_features = sorted(models[-1].feature_names_in_)
+    model = pickle.load(file)
+model_features = sorted(model.feature_names_in_)
 
 
 # Load crossings
 print(f"Loading crossing intervals from {utils.User.CROSSING_LISTS['Philpott']}")
 crossings = boundaries.Load_Crossings(
     utils.User.CROSSING_LISTS["Philpott"], include_data_gaps=True
-).iloc[0:10]
+).iloc[0:5]
 
 # To ensure no overlap, we want to classify pairs of crossings as one.
 # i.e. BS_IN and MP_IN, as well as MP_OUT and BS_OUT
@@ -175,7 +175,9 @@ def Get_Probabilities(crossing_interval_group):
     # Create windows to classify
     windows = [
         (window_start, window_start + dt.timedelta(seconds=window_size))
-        for window_start in pd.date_range(start=data_start_time, end=data_end_time, freq=f"{step_size}s")
+        for window_start in pd.date_range(
+            start=data_start_time, end=data_end_time, freq=f"{step_size}s"
+        )
     ]
     window_centres = [
         window_start + (window_end - window_start) / 2
@@ -186,7 +188,7 @@ def Get_Probabilities(crossing_interval_group):
     missing = []
 
     # Get features from each window
-    for (window_start, window_end) in windows:
+    for window_start, window_end in windows:
 
         sample = Get_Window_Features(data, window_start, window_end)
 
@@ -197,7 +199,6 @@ def Get_Probabilities(crossing_interval_group):
             missing.append([1, 1, 1])
 
     probabilities = np.full((len(windows), 3), np.nan)
-    probability_errors = np.full((len(windows), 3), np.nan)
 
     valid_indices = np.array(missing)[:, 0] == 0
 
@@ -205,22 +206,17 @@ def Get_Probabilities(crossing_interval_group):
         # Then make predictions!
         samples = pd.concat(samples, ignore_index=True)
 
-        # Model was trained using all cores, but as we multiprocess each crossing,
-        # we can't use more multithreading within each core
-        predictions = np.array([model.predict_proba(samples) for model in models])
-
-        probabilities[valid_indices, :] = np.mean(predictions, axis=0)
-        probability_errors[valid_indices, :] = np.std(predictions, axis=0)
+        predictions = model.predict_proba(samples)
+        probabilities[valid_indices, :] = predictions
 
     else:
         raise ValueError("All samples missing")
-    
+
     # Now we have three lists:
     # window_centres        (1 x N) - The time stamp of our probabilities
     # probabilities         (3 x N) - The average probability of classification for each class over 10 models
-    # probability_errors    (3 x N) - The standard deviation of above
 
-    return window_centres, probabilities, probability_errors
+    return window_centres, probabilities
 
 
 # "Tracking progress of joblib.Parallel execution"
@@ -228,6 +224,7 @@ def Get_Probabilities(crossing_interval_group):
 @contextlib.contextmanager
 def tqdm_joblib(tqdm_object):
     """Context manager to patch joblib to report into tqdm progress bar given as argument"""
+
     class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
         def __call__(self, *args, **kwargs):
             tqdm_object.update(n=self.batch_size)
@@ -242,16 +239,25 @@ def tqdm_joblib(tqdm_object):
         tqdm_object.close()
 
 
-"""
-with joblib.Parallel(n_jobs=n_jobs, verbose=0) as parallel:
-    results = list(tqdm(
-        parallel(joblib.delayed(Get_Probabilities)(group) for group in crossing_groups),
-        desc="Applying Model to Crossing Intervals",
-        total=len(crossing_groups)
-    ))
-"""
+with tqdm_joblib(
+    tqdm(desc="Applying model to crossing intervals", total=len(crossing_groups))
+) as progress_bar:
+    results = joblib.Parallel(n_jobs=n_jobs)(
+        joblib.delayed(Get_Probabilities)(group) for group in crossing_groups
+    )
 
-with tqdm_joblib(tqdm(desc="Applying model to crossing intervals", total=len(crossing_groups))) as progress_bar:
-    results = joblib.Parallel(n_jobs=n_jobs)(joblib.delayed(Get_Probabilities)(group) for group in crossing_groups)
 
-print(results)
+times, probabilities = zip(*results)  # Unpack results
+
+# Convert lists of times and probabilities into arrays
+times = np.concatenate(times)
+probabilities = np.vstack(probabilities)
+
+data_to_save = {
+    "Time": times,
+    "P(MSh)": probabilities[:, 0],
+    "P(MSp)": probabilities[:, 1],
+    "P(SW)": probabilities[:, 2],
+}
+
+pd.DataFrame(data_to_save).to_csv("./output.csv", index=False)
