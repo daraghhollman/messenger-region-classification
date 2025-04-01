@@ -25,7 +25,9 @@ model_features = sorted(model.feature_names_in_)
 print(f"Loading crossing intervals from {utils.User.CROSSING_LISTS['Philpott']}")
 crossings = boundaries.Load_Crossings(
     utils.User.CROSSING_LISTS["Philpott"], include_data_gaps=True
-).iloc[0:5]
+)
+
+print(len(crossings))
 
 # To ensure no overlap, we want to classify pairs of crossings as one.
 # i.e. BS_IN and MP_IN, as well as MP_OUT and BS_OUT
@@ -58,7 +60,7 @@ while crossing_index < len(crossings) - 1:
                 # This is abnormal, we just want to look around the current crossing
                 crossing_groups.append([current_crossing])
 
-    elif current_crossing["Type"] == "MP_IN":
+    elif current_crossing["Type"] == "MP_OUT":
         # We expect a bow shock in crossing next
         match next_crossing["Type"]:
             case "BS_OUT":
@@ -69,7 +71,7 @@ while crossing_index < len(crossings) - 1:
                 # saved it, so we add an extra to the crossing index.
                 crossing_index += 1
 
-            case label if label in ["MP_OUT", "MP_IN", "BS_IN", "DATA_GAP"]:
+            case label if label in ["MP_IN", "MP_OUT", "BS_IN", "DATA_GAP"]:
                 # This is abnormal, we just want to look around the current crossing
                 crossing_groups.append([current_crossing])
 
@@ -80,7 +82,6 @@ while crossing_index < len(crossings) - 1:
             crossing_groups.append([current_crossing])
 
     crossing_index += 1
-
 
 # Now that we have a list containing all the groups of crossing intervals we want
 # to search around. We can loop through this (with multiprocessing) and find our
@@ -237,6 +238,9 @@ def tqdm_joblib(tqdm_object):
     finally:
         joblib.parallel.BatchCompletionCallBack = old_batch_callback
         tqdm_object.close()
+
+print(len(crossing_groups))
+1/0
 
 
 with tqdm_joblib(
