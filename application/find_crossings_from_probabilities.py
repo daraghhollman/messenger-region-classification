@@ -37,10 +37,12 @@ jump_indices = np.where(time_differences > 1)[0] + 1
 negative_jump_indices = np.where(time_differences < -1)[0] + 1
 no_jump = np.where(abs(time_differences) < 1)[0] + 1
 
+if len(no_jump) != 0:
+    raise ValueError("Duplicate Predictions in model output!\n" + f"Data at indices: {no_jump}")
+
 """
 print(len(jump_indices))
 print(len(negative_jump_indices))
-print(len(no_jump))
 """
 
 # If there are negative indices, this is alright, but means we have overlap
