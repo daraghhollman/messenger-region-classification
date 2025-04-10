@@ -19,7 +19,7 @@ wong_colours = {
 
 
 # Load crossings
-crossings = pd.read_csv("/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/new_crossings.csv")
+crossings = pd.read_csv("/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings.csv")
 crossings["Time"] = pd.to_datetime(crossings["Time"])
 
 bow_shock_crossings = crossings.loc[crossings["Transition"].str.contains("BS")].copy()

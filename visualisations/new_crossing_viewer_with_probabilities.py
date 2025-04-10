@@ -13,6 +13,10 @@ crossing_intervals = boundaries.Load_Crossings(
     utils.User.CROSSING_LISTS["Philpott"], include_data_gaps=False
 )
 
+# Load probabilities
+model_output = pd.read_csv("/home/daraghhollman/output.csv")
+model_output["Time"] = pd.to_datetime(model_output["Time"], format="ISO8601")
+
 # Load the new crossing list
 hollman_crossings = pd.read_csv(
     "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings.csv"
@@ -34,11 +38,14 @@ for i, interval in random_crossing_intervals.iterrows():
         utils.User.DATA_DIRECTORIES["MAG"], start, end
     )
 
+    # Get model_ouput between these times
+    probabilities = model_output.loc[model_output["Time"].between(start, end)]
+
     # Search the model output for new crossings in this interval
     new_crossings = hollman_crossings.loc[hollman_crossings["Time"].between(start, end)].reset_index(drop=True)
 
     # Create a figure and plot the mag data
-    fig, (region_ax, ax) = plt.subplots(2, 1, height_ratios=[1,30], sharex=True)
+    fig, (region_ax, ax, probability_ax) = plt.subplots(3, 1, height_ratios=[1,30, 10], sharex=True)
 
     ax.plot(
         messenger_data["date"],
@@ -74,8 +81,14 @@ for i, interval in random_crossing_intervals.iterrows():
 
     ax.set_ylabel("Magnetic Field Strength [nT]")
     ax.margins(0)
-    plotting.Add_Tick_Ephemeris(ax)
     mag_legend = ax.legend()
+
+    probability_ax.plot(probabilities["Time"], probabilities["P(SW)"], color=wong_colours["yellow"], lw=3, label="P(SW)")
+    probability_ax.plot(probabilities["Time"], probabilities["P(MSh)"], color=wong_colours["orange"], lw=3, label="P(MSh)")
+    probability_ax.plot(probabilities["Time"], probabilities["P(MSp)"], color=wong_colours["blue"], lw=3, label="P(MSp)")
+    probability_ax.legend()
+    probability_ax.set_ylim(0, 1)
+    plotting.Add_Tick_Ephemeris(probability_ax)
 
     """
     # Add boundary crossing intervals
