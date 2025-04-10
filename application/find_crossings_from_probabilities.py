@@ -40,28 +40,28 @@ no_jump = np.where(abs(time_differences) < 1)[0] + 1
 if len(no_jump) != 0:
     raise ValueError("Duplicate Predictions in model output!\n" + f"Data at indices: {no_jump}")
 
-"""
-print(len(jump_indices))
-print(len(negative_jump_indices))
-"""
-
 # If there are negative indices, this is alright, but means we have overlap
 # in our groups. We can simply merge these groups by removing duplicate rows.
 
 # There is exactly 1 second between each consecutive measurement.
 # At each negative jump index, we can hence find the time difference
 # in seconds, and remove that many rows from the dataframe
-for i in negative_jump_indices:
-
+# We must do this in reverse as the indices will change each time
+for i in reversed(negative_jump_indices):
     time_jump = (times[i - 1] - times[i]).astype("timedelta64[s]").astype(int)
+    indices_to_delete = np.arange(i, i + time_jump + 1)
+    indices_to_delete = indices_to_delete[indices_to_delete < len(times)]
 
-    # We then remove rows from i to i + time_jump
-    times = np.delete(times, np.arange(i, i + time_jump + 1, 1))
+    times = np.delete(times, indices_to_delete)
+    for key in probabilities:
+        probabilities[key] = np.delete(probabilities[key], indices_to_delete)
 
-    for key in probabilities.keys():
-        probabilities[key] = np.delete(
-            probabilities[key], np.arange(i, i + time_jump + 1, 1)
-        )
+# Recalculate jump_indices now that times has changed
+time_differences = np.diff(times).astype("timedelta64[s]").astype(int)
+jump_indices = np.where(time_differences > 1)[0] + 1
+
+# Split the data into crossing groups
+split_indices = [0] + jump_indices.tolist() + [len(times)]
 
 # We split the data to reform the groups at these points
 # Split indices mark the start of each group (except for the last point,
@@ -83,6 +83,7 @@ crossing_groups = [
 # Now we can loop through these crossing groups and apply our logic
 groups_without_crossings = 0
 new_crossings = []
+all_regions = []
 for crossing_group in tqdm(
     crossing_groups, desc="Finding Crossings", total=len(crossing_groups)
 ):
@@ -126,7 +127,7 @@ for crossing_group in tqdm(
 
         regions = []
 
-        for i in range(len(crossing_indices) - 1):
+        for i in range(len(crossing_indices)):
             current_crossing_index = crossing_indices[i]
 
             if i == len(crossing_indices) - 1:
@@ -134,6 +135,7 @@ for crossing_group in tqdm(
 
             else:
                 next_crossing_index = crossing_indices[i + 1]
+
 
             regions.append(
                 {
@@ -237,6 +239,9 @@ for crossing_group in tqdm(
         ),
         "Label",
     ] = "Unknown"
+
+    # Save regions
+    all_regions.append(region_data)
 
     # DETERMINE CROSSINGS
     for region_id, region in region_data.iterrows():
@@ -361,4 +366,5 @@ for transition, count in transition_counts.items():
     print(f"{transition}: {count} crossings")
 
 
-pd.DataFrame(new_crossings).to_csv("./new_crossings.csv")
+pd.DataFrame(new_crossings).to_csv("/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings.csv")
+pd.concat(all_regions).to_csv("/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_regions.csv")
