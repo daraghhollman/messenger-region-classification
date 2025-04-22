@@ -8,10 +8,10 @@ import pandas as pd
 from hermpy import boundaries, mag, trajectory, utils
 from tqdm import tqdm
 
-n_jobs = 1
+n_jobs = -1
 
 # Load Model
-model_path = "./modelling/three_class_random_forest"
+model_path = "../models/model"
 print(f"Loading model from {model_path}")
 with open(
     model_path,
@@ -203,8 +203,10 @@ def Get_Probabilities(crossing_interval_group):
         # Then make predictions!
         samples = pd.concat(samples, ignore_index=True)
 
-        samples["Heliocentric Distance (AU)"] = trajectory.Get_Heliocentric_Distance(
-            samples["Mid-Time"].to_list()
+        samples["Heliocentric Distance (AU)"] = utils.Constants.KM_TO_AU(
+            trajectory.Get_Heliocentric_Distance(
+                samples["Mid-Time"].to_list()
+            )
         )
 
         # Ensure everything is in the correct order
@@ -244,9 +246,9 @@ def tqdm_joblib(tqdm_object):
 
 
 with tqdm_joblib(
-    tqdm(desc="Applying model to crossing intervals", total=len(crossing_groups))
+    tqdm(desc="Applying model to crossing intervals", dynamic_ncols=True, smoothing=0, total=len(crossing_groups))
 ) as progress_bar:
-    results = joblib.Parallel(n_jobs=n_jobs)(
+    results = joblib.Parallel(n_jobs=n_jobs, temp_folder="/net/romulus.ap.dias.ie/romulus/dhollman/tmp/")(
         joblib.delayed(Get_Probabilities)(group) for group in crossing_groups
     )
 
@@ -264,4 +266,4 @@ data_to_save = {
     "P(SW)": probabilities[:, 2],
 }
 
-pd.DataFrame(data_to_save).to_csv("./output.csv", index=False)
+pd.DataFrame(data_to_save).to_csv("../outputs/model_ouput.csv", index=False)
