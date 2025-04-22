@@ -8,10 +8,10 @@ import pandas as pd
 from hermpy import boundaries, mag, trajectory, utils
 from tqdm import tqdm
 
-n_jobs = -1
+n_jobs = 1
 
 # Load Model
-model_path = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/three_class_random_forest"
+model_path = "./modelling/three_class_random_forest"
 print(f"Loading model from {model_path}")
 with open(
     model_path,
@@ -26,8 +26,6 @@ print(f"Loading crossing intervals from {utils.User.CROSSING_LISTS['Philpott']}"
 crossings = boundaries.Load_Crossings(
     utils.User.CROSSING_LISTS["Philpott"], include_data_gaps=True
 )
-
-print(len(crossings))
 
 # To ensure no overlap, we want to classify pairs of crossings as one.
 # i.e. BS_IN and MP_IN, as well as MP_OUT and BS_OUT
@@ -130,17 +128,15 @@ def Get_Window_Features(data, window_start, window_end):
 
     features.update(
         {
+            "Mid-Time": middle_data_point["date"],
             "Latitude (deg.)": trajectory.Latitude(middle_position),
             "Magnetic Latitude (deg.)": trajectory.Magnetic_Latitude(middle_position),
             "Local Time (hrs)": trajectory.Local_Time(middle_position),
-            "Heliocentric Distance (AU)": trajectory.Get_Heliocentric_Distance(
-                middle_data_point["date"]
-            ),
         }
     )
 
     # Only include features which are in the model
-    X = pd.DataFrame([features]).reindex(columns=model_features, fill_value=0)
+    X = pd.DataFrame([features])
 
     return X
 
@@ -207,6 +203,13 @@ def Get_Probabilities(crossing_interval_group):
         # Then make predictions!
         samples = pd.concat(samples, ignore_index=True)
 
+        samples["Heliocentric Distance (AU)"] = trajectory.Get_Heliocentric_Distance(
+            samples["Mid-Time"].to_list()
+        )
+
+        # Ensure everything is in the correct order
+        samples = samples.reindex(columns=model_features)
+
         predictions = model.predict_proba(samples)
         probabilities[valid_indices, :] = predictions
 
@@ -238,9 +241,6 @@ def tqdm_joblib(tqdm_object):
     finally:
         joblib.parallel.BatchCompletionCallBack = old_batch_callback
         tqdm_object.close()
-
-print(len(crossing_groups))
-1/0
 
 
 with tqdm_joblib(
