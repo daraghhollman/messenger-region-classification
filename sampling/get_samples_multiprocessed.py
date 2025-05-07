@@ -5,12 +5,12 @@ To save on compute time, we could take X random samples of size Y, within time Z
 """
 
 import csv
-import tempfile
-import shutil
 import datetime as dt
 import multiprocessing
 import os
 import random
+import shutil
+import tempfile
 
 import numpy as np
 import pandas as pd
@@ -251,6 +251,7 @@ print(f"Continuing from crossing id: {last_index + 1}")
 
 process_items = process_items[last_index + 1 :]
 
+# Some fancy code to enable us to start and stop the script if needed, without losing progress
 def Safely_Append_Row(output_file, sample):
 
     # Write to a temporary file first.
