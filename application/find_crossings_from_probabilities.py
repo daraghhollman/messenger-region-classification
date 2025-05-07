@@ -9,14 +9,16 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+model_without_heliocentric_distance = False
+
 # Load the data
 print("Loading Model Output")
 model_output = pd.read_csv(
-    # "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/output.csv"
-    "/home/daraghhollman/output.csv"
+    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/output.csv"
+    if not model_without_heliocentric_distance
+    else "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/output_without_heliocentric_distance.csv"
 )
 print("Output Loaded")
-model_output.dropna(inplace=True)
 
 # Convert from string to datetime
 model_output["Time"] = pd.to_datetime(model_output["Time"], format="ISO8601")
@@ -38,7 +40,9 @@ negative_jump_indices = np.where(time_differences < -1)[0] + 1
 no_jump = np.where(abs(time_differences) < 1)[0] + 1
 
 if len(no_jump) != 0:
-    raise ValueError("Duplicate Predictions in model output!\n" + f"Data at indices: {no_jump}")
+    raise ValueError(
+        "Duplicate Predictions in model output!\n" + f"Data at indices: {no_jump}"
+    )
 
 # If there are negative indices, this is alright, but means we have overlap
 # in our groups. We can simply merge these groups by removing duplicate rows.
@@ -135,7 +139,6 @@ for crossing_group in tqdm(
 
             else:
                 next_crossing_index = crossing_indices[i + 1]
-
 
             regions.append(
                 {
@@ -366,5 +369,13 @@ for transition, count in transition_counts.items():
     print(f"{transition}: {count} crossings")
 
 
-pd.DataFrame(new_crossings).to_csv("/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings.csv")
-pd.concat(all_regions).to_csv("/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_regions.csv")
+pd.DataFrame(new_crossings).to_csv(
+    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings.csv"
+    if not model_without_heliocentric_distance
+    else "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings_without_heliocentric_distance"
+)
+pd.concat(all_regions).to_csv(
+    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_regions.csv"
+    if not model_without_heliocentric_distance
+    else "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_regions_without_heliocentric_distance.csv"
+)

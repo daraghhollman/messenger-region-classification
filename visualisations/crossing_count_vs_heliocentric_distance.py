@@ -5,7 +5,10 @@ Script to investigate count of BS and MP with respect to heliocentric distance
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from hermpy import trajectory, utils
+import scipy.stats
+from hermpy import boundaries, trajectory, utils
+
+use_heliocentric_distance = False
 
 wong_colours = {
     "black": "black",
@@ -21,9 +24,20 @@ wong_colours = {
 
 # Load crossings
 crossings = pd.read_csv(
-    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings.csv"
+    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings_with_adjusted_counting.csv"
+    if use_heliocentric_distance
+    else "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings_without_heliocentric_distance_with_adjusted_counting.csv"
 )
+"""
+    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings.csv"
+    if use_heliocentric_distance
+    else "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings_without_heliocentric_distance"
+"""
 crossings["Time"] = pd.to_datetime(crossings["Time"])
+
+philpott_intervals = boundaries.Load_Crossings(
+    utils.User.CROSSING_LISTS["Philpott"], include_data_gaps=False
+)
 
 bow_shock_crossings = crossings.loc[crossings["Transition"].str.contains("BS")].copy()
 magnetopause_crossings = crossings.loc[
@@ -38,33 +52,87 @@ magnetopause_crossings["Heliocentric Distance"] = utils.Constants.KM_TO_AU(
     trajectory.Get_Heliocentric_Distance(magnetopause_crossings["Time"])
 )
 
+philpott_intervals["Mid Time"] = (
+    philpott_intervals["Start Time"]
+    + (philpott_intervals["End Time"] - philpott_intervals["Start Time"]) / 2
+)
+philpott_intervals["Heliocentric Distance"] = utils.Constants.KM_TO_AU(
+    trajectory.Get_Heliocentric_Distance(philpott_intervals["Mid Time"])
+)
+
 bin_size = 0.01
 heliocentric_distance_bins = np.arange(0.3, 0.47 + bin_size, bin_size)
 
 fig, ax = plt.subplots()
 
-ax.hist(
+use_density = True
+
+b_data, _, _ = ax.hist(
     bow_shock_crossings["Heliocentric Distance"],
     bins=heliocentric_distance_bins.tolist(),
     color="black",
     histtype="step",
     linewidth=5,
-    label="Bow Shock Crossings"
+    label="Bow Shock Crossings",
+    density=use_density,
 )
 
-ax.hist(
+m_data, _, _ = ax.hist(
     magnetopause_crossings["Heliocentric Distance"],
     bins=heliocentric_distance_bins.tolist(),
     color=wong_colours["light blue"],
     histtype="step",
     linewidth=5,
-    label="Magnetopause Crossings"
+    label="Magnetopause Crossings",
+    density=use_density,
+)
+
+p_data, _, _ = ax.hist(
+    philpott_intervals["Heliocentric Distance"],
+    bins=heliocentric_distance_bins.tolist(),
+    color=wong_colours["red"],
+    histtype="step",
+    linewidth=5,
+    label="Philpott Intervals (BS & MP)",
+    density=use_density,
 )
 
 ax.set_xlabel("Heliocentric Distance (AU)")
-ax.set_ylabel("Number of Crossings")
+
+if not use_density:
+    ax.set_ylabel("Number of Crossings")
+
+else:
+    ax.set_ylabel("Crossing Density\n(Crossings / (N * bin width) )")
 
 ax.legend()
 ax.margins(0)
+
+plt.show()
+
+fig, ax = plt.subplots()
+
+bin_centres = (heliocentric_distance_bins[1:] + heliocentric_distance_bins[:-1]) / 2
+
+b_pearsonr = scipy.stats.pearsonr(bin_centres, b_data / p_data)
+m_pearsonr = scipy.stats.pearsonr(bin_centres, m_data / p_data)
+
+ax.scatter(
+    bin_centres,
+    b_data / p_data,
+    c="k",
+    label=f"Bow Shock: r={b_pearsonr.statistic:.2f}, p={b_pearsonr.pvalue:.10f}",
+)
+ax.scatter(
+    bin_centres,
+    m_data / p_data,
+    c=wong_colours["light blue"],
+    label=f"Magnetopause: r={m_pearsonr.statistic:.2f}, p={m_pearsonr.pvalue:.5f}",
+)
+
+ax.legend()
+ax.set_xlabel("Heliocentric Distance (AU)")
+ax.set_ylabel("Crossing Denstiy / Philpott Interval Density\n(Black / Orange)")
+
 
 plt.show()

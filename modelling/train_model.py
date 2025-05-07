@@ -10,30 +10,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import scipy.stats
-from sklearn.ensemble import (
-    GradientBoostingClassifier,
-    HistGradientBoostingClassifier,
-    RandomForestClassifier,
-)
-from sklearn.metrics import (
-    ConfusionMatrixDisplay,
-    accuracy_score,
-    classification_report,
-    confusion_matrix,
-)
-from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
-from tqdm import tqdm
-
-SEED = 0
-METHOD = "RF"  # RF, GB, HGB
-model_params = {"n_estimators": 100, "max_depth": 15, "max_features": "sqrt"}
-
-print(model_params)
+import sklearn.ensemble
+import sklearn.metrics
+import sklearn.model_selection
 
 
 def main():
+
+    balance_classes = True
+    no_ephem = False
+    no_heliocentric_distance = False
+
     # Load extracted features
+    # These are in 4 different data sets which we need to combine
     inputs = {
         "Solar Wind": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/solar_wind_samples.csv",
         "BS Magnetosheath": "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/bs_magnetosheath_samples.csv",
@@ -45,7 +34,6 @@ def main():
     features_data = []
     for region_type in inputs.keys():
         features_data.append(pd.read_csv(inputs[region_type]))
-
     print("Data loaded")
 
     # Combine into one dataframe
@@ -81,6 +69,7 @@ def main():
     )
 
     # Feature Removal
+    # These features were extracted, but are unimportant
     features_data = features_data.drop(
         columns=[
             "Skew |B|",
@@ -94,116 +83,154 @@ def main():
         ]
     )
 
-    # Try with and without bs and mp magnetosheath as separate features
+    if no_ephem:
+        features_data = features_data.drop(
+            columns=[
+                "Local Time (hrs)",
+                "X MSM' (radii)",
+                "Y MSM' (radii)",
+                "Z MSM' (radii)",
+                "Latitude (deg.)",
+                "Magnetic Latitude (deg.)",
+            ]
+        )
+
+    elif no_heliocentric_distance:
+        features_data = features_data.drop(
+            columns=[
+                "Heliocentric Distance (AU)",
+            ]
+        )
+
+    # We previously extracted BS and MP adjacent magnetosheath data as different
+    # We change their labels to be the same now.
+    # This introduces a class imbalance which we must account for.
     features_data["Label"] = features_data["Label"].replace(
         "BS Magnetosheath", "Magnetosheath"
     )
     features_data["Label"] = features_data["Label"].replace(
         "MP Magnetosheath", "Magnetosheath"
     )
-    # Put some of the data to the side which we can test on
-    # after tuning our parameters.
-    evaluation_data = features_data.sample(frac=0.2, random_state=SEED)
-    features_data = features_data.drop(evaluation_data.index)
 
-    column_names = list(features_data.columns.values)
-    column_names.sort()
-    evaluation_X = evaluation_data[column_names]
-    evaluation_X = evaluation_X.drop(columns=["Label"])
+    if balance_classes:
+        magnetosheath_rows = features_data.loc[
+            features_data["Label"] == "Magnetosheath"
+        ]
+        rows_to_remove = magnetosheath_rows.sample(frac=0.5)
 
-    evaluation_y = evaluation_data["Label"]  # Target
+        features_data = features_data.drop(rows_to_remove.index)
 
-    print(
-        f"Isolated 20% of data for true testing. New data length {len(features_data)}"
-    )
-
-    column_names = list(features_data.columns.values)
-    column_names.sort()
-    X = features_data[column_names]
-    X = X.drop(columns=["Label"])
-
-    y = features_data["Label"]  # Target
-
-    # MODELLING #
-    print("Beginning Modeling")
-    num_models = 10
-    kfold = StratifiedKFold(n_splits=num_models, shuffle=True, random_state=SEED)
-
+    # Start our multi-model loop:
+    number_of_iterrations = 10
+    print(f"Training {number_of_iterrations} models")
     models = []
-    accuracies = []
-    training_accuracies = []
-    confusion_matrices = []
+    testing_accuracies = []
+    testing_confusion_matrices = []
+    for model_index in range(number_of_iterrations):
 
-    for train_index, test_index in tqdm(
-        kfold.split(X, y), desc="Training Model", total=num_models
-    ):
+        # Create a copy of the data
+        model_data = features_data.copy()
 
-        X_train, X_test = X.iloc[train_index], X.iloc[test_index]
-        y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+        # We sort the columns by feature name as this is useful later.
+        # When applying the model, the data input must be in the same order.
+        X = model_data.drop(columns=["Label"])
+        y = model_data["Label"]
 
-        current_model = RandomForestClassifier(
-            **model_params, random_state=SEED, n_jobs=1
+        # Sort the column names after dropping the label
+        column_names = list(X.columns)
+        column_names.sort()
+        X = X[column_names]  # Ensure X is ordered by sorted column names
+
+        # MODELLING
+        training_X, testing_X, training_y, testing_y = (
+            sklearn.model_selection.train_test_split(
+                X,
+                y,
+                test_size=0.2,
+                stratify=y,
+            )
         )
 
-        current_model.fit(X_train, y_train)
+        # Define our model using default parameters
+        # Note that we aren't using the validation sets for each model.
+        # If needed, we can use these to tune the hyperparameters
 
-        y_pred = current_model.predict(X_test)
-        y_pred_training = current_model.predict(X_train)
+        model = sklearn.ensemble.RandomForestClassifier(n_jobs=-1)
+        model.fit(training_X, training_y)
 
-        test_accuracy = accuracy_score(y_test, y_pred)
-        train_accuracy = accuracy_score(y_train, y_pred_training)
+        models.append(model)
 
-        models.append(current_model)
-        accuracies.append(test_accuracy)
-        training_accuracies.append(train_accuracy)
-        confusion_matrices.append(confusion_matrix(y_test, y_pred))
+        # Test the model using the testing set
+        testing_predictions = model.predict(testing_X)
+        testing_accuracy = sklearn.metrics.accuracy_score(
+            testing_y, testing_predictions
+        )
+        testing_accuracies.append(testing_accuracy)
 
-    # Compute average accuracy across all folds
-    avg_test_accuracy = np.mean(accuracies)
-    avg_test_accuracy_error = np.std(accuracies)
-    avg_train_accuracy = np.mean(training_accuracies)
-    avg_train_accuracy_error = np.std(training_accuracies)
-    avg_confusion_matrix = np.mean(confusion_matrices, axis=0)
-    confusion_matrix_std = np.std(confusion_matrices, axis=0)
+        testing_confusion_matrix = sklearn.metrics.confusion_matrix(
+            testing_y, testing_predictions
+        )
+        testing_confusion_matrices.append(testing_confusion_matrix)
 
-    print(
-        f"\nAverage Test Accuracy: {avg_test_accuracy:.5f} +/- {avg_test_accuracy_error:.5f}"
-    )
-    print(
-        f"Average Training Accuracy: {avg_train_accuracy:.8f} +/- {avg_train_accuracy_error:.8f}"
-    )
+        print(f"Model trained with testing accuracy: {testing_accuracy}")
 
-    if METHOD == "RF":
-        importances = np.array([model.feature_importances_ for model in models]).T
-        mean_importances = np.mean(importances, axis=1)
-        feature_names = X.columns
+    # Print stats
+    print(f"Mean model testing accuracy: {np.mean(testing_accuracies)}")
+    print(f"Std model testing accuracy: {np.std(testing_accuracies)}")
 
-        # Sorting
-        sorted_indices = np.argsort(mean_importances)[::-1]
-        importances = importances[sorted_indices, :]  # Reorder importances
-        mean_importances = mean_importances[sorted_indices]  # Reorder mean values
-        feature_names = [
-            feature_names[i] for i in sorted_indices
-        ]  # Reorder feature names
+    # Make plots!
+    # Save out confusion matrices, testing accuracies, and models
+    # to plot later.
+    """
+    with open(
+        "/home/daraghhollman/Main/Work/papers/boundaries/resources/models",
+        "wb",
+    ) as file:
+        pickle.dump(models, file)
 
-        # Create a boxplot
-        plt.figure(figsize=(12, 6))
+    with open(
+        "/home/daraghhollman/Main/Work/papers/boundaries/resources/testing_confusion_matrices",
+        "wb",
+    ) as file:
+        pickle.dump(testing_confusion_matrices, file)
 
-        y_positions = np.arange(len(feature_names))
+    with open(
+        "/home/daraghhollman/Main/Work/papers/boundaries/resources/testing_accuracies",
+        "wb",
+    ) as file:
+        pickle.dump(testing_accuracies, file)
+    """
 
-        plt.barh(y_positions, mean_importances, color="white", edgecolor="black")
-        sns.boxplot(data=importances.T, orient="h", color="indianred")
+    # AVERAGE FEATURE IMPORTANCE
+    importances = np.array([model.feature_importances_ for model in models]).T
+    mean_importances = np.mean(importances, axis=1)
 
-        plt.yticks(
-            y_positions, feature_names
-        )  # Ensure feature names are correctly positioned
+    # Sorting
+    sorted_indices = np.argsort(mean_importances)[::-1]
+    importances = importances[sorted_indices, :]  # Reorder importances
+    mean_importances = mean_importances[sorted_indices]  # Reorder mean values
+    feature_names = [column_names[i] for i in sorted_indices]  # Reorder feature names
 
-        # Add feature names as labels
-        plt.yticks(ticks=np.arange(len(feature_names)), labels=feature_names)
-        plt.xlabel("Feature Importance")
-        plt.title(f"Feature Importance Distribution Across {num_models} Folds")
+    # Create a boxplot
+    plt.figure(figsize=(12, 6))
+
+    y_positions = np.arange(len(feature_names))
+
+    plt.barh(y_positions, mean_importances, color="white", edgecolor="black")
+    sns.boxplot(data=importances.T, orient="h", color="indianred")
+
+    plt.yticks(
+        y_positions, feature_names
+    )  # Ensure feature names are correctly positioned
+
+    # Add feature names as labels
+    plt.yticks(ticks=np.arange(len(feature_names)), labels=feature_names)
+    plt.xlabel("Feature Importance")
+    plt.title(f"Average Feature Importance Distribution for {len(models)} models")
 
     print("\nConfusion Matrix\n")
+    avg_confusion_matrix = np.mean(testing_confusion_matrices, axis=0)
+    confusion_matrix_std = np.std(testing_confusion_matrices, axis=0)
     print(avg_confusion_matrix)
 
     # Plot the average confusion matrix
@@ -237,99 +264,25 @@ def main():
 
     plt.show()
 
-    #### EVALUTATION ####
-    evaluation_predictions = [m.predict(evaluation_X) for m in models]
-    evaluation_confusion_matrices = [
-        confusion_matrix(evaluation_y, predictions)
-        for predictions in evaluation_predictions
-    ]
+    # If happy with the output, we can save the model
+    if no_ephem:
+        output_file = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/no_ephem"
 
-    print(
-        f"Evaluation Accuracy: {np.mean([accuracy_score(evaluation_y, predictions) for predictions in evaluation_predictions])} +/- {np.std([accuracy_score(evaluation_y, predictions) for predictions in evaluation_predictions])}"
-    )
+    elif no_heliocentric_distance:
+        output_file = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/model_without_heliocentric_distance"
+    else:
+        output_file = (
+            "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/three_class_random_forest"
+            if not balance_classes
+            else "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/class_balenced_model"
+        )
 
-    mean_evaluation_confusion_matrix = np.mean(evaluation_confusion_matrices, axis=0)
-    std_evaluation_confusion_matrix = np.std(evaluation_confusion_matrices, axis=0)
-
-    # Plot the average confusion matrix
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(
-        mean_evaluation_confusion_matrix,
-        annot=True,
-        fmt=".2f",
-        cmap="viridis",
-        cbar=True,
-        xticklabels=["Magnetosheath", "Magnetosphere", "Solar Wind"],
-        yticklabels=["Magnetosheath", "Magnetosphere", "Solar Wind"],
-        norm=matplotlib.colors.LogNorm(),
-    )
-    # plt.title("Average Confusion Matrix with Std")
-    plt.xlabel("Predicted Label")
-    plt.ylabel("True Label")
-
-    # Annotate with standard deviation
-    for i in range(mean_evaluation_confusion_matrix.shape[0]):
-        for j in range(mean_evaluation_confusion_matrix.shape[1]):
-            plt.text(
-                j + 0.5,
-                i + 0.65,
-                f"±{std_evaluation_confusion_matrix[i, j]:.2f}",
-                ha="center",
-                va="bottom",
-                fontsize=10,
-                color="black" if i == j else "white",
-            )
-
-    plt.show()
-
-    match METHOD:
-        case "RF":
-            output_file = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/multi_model_rf"
-
-        case "GB":
-            output_file = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/multi_model_gb"
-
-        case "HGB":
-            output_file = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/multi_model_hgb"
-
-        case _:
-            raise ValueError(f"Invalid modelling method '{METHOD}'")
-
+    # We arbitraraly save the 1st model
     with open(
         output_file,
         "wb",
     ) as file:
-        pickle.dump(models, file)
-
-
-def Show_Training_Spread(training_data):
-    """A function to check if the training data is disperse spatially.
-
-    This is done by plotting distributions of spatial features.
-
-    """
-
-    features_to_test = [
-        "Heliocentric Distance (AU)",
-        "Local Time (hrs)",
-        "Latitude (deg.)",
-        "Magnetic Latitude (deg.)",
-        "X MSM' (radii)",
-        "Y MSM' (radii)",
-        "Z MSM' (radii)",
-    ]
-
-    for feature in features_to_test:
-        _, ax = plt.subplots()
-
-        ax.hist(training_data[feature], color="black")
-
-        ax.set_xlabel(feature)
-        ax.set_ylabel("# Events")
-
-        ax.margins(0)
-
-        plt.show()
+        pickle.dump(models[0], file)
 
 
 if __name__ == "__main__":
