@@ -1,3 +1,9 @@
+"""
+Investigate crossing intervals where we classify the third i.e. the incorrect
+region for that interval. i.e. We classify solar wind for a magnetopause
+crossing interval
+"""
+
 import datetime as dt
 
 import matplotlib.pyplot as plt
@@ -12,20 +18,25 @@ crossing_intervals = boundaries.Load_Crossings(
     utils.User.CROSSING_LISTS["Philpott"], include_data_gaps=False
 )
 
-# Specifically look at crossing intervals at large heliocentric distance
-crossing_intervals["Mid Time"] = (
-    crossing_intervals["Start Time"]
-    + (crossing_intervals["End Time"] - crossing_intervals["Start Time"]) / 2
-)
-
-crossing_intervals["Heliocentric Distance (AU)"] = utils.Constants.KM_TO_AU(
-    trajectory.Get_Heliocentric_Distance(crossing_intervals["Mid Time"])
-)
-
-crossing_intervals = crossing_intervals.loc[
-    (crossing_intervals["Heliocentric Distance (AU)"] > 0.38)
-    & (crossing_intervals["Heliocentric Distance (AU)"] < 0.42)
+# In this case, we want to specifically look at certain indices
+specific_indices = [
+    66,
+    74,
+    3206,  #
+    3208,  # Consecutive entries might be a sign of something physically interesting
+    3209,  #
+    3406,
+    3967,
+    4844,
+    4972,  # Again here too
+    4973,  #
+    5124,
+    6084,
+    10173,
+    11124,
+    14527,
 ]
+crossing_intervals = crossing_intervals.loc[specific_indices]
 
 # Load probabilities
 model_output = pd.read_csv(
@@ -46,10 +57,7 @@ pump_crossings = pd.read_csv(
 pump_crossings["datetime"] = pd.to_datetime(pump_crossings["datetime"])
 pump_crossings["Time"] = pump_crossings["datetime"]
 
-# Randomly sort the intervals and loop through them
-random_crossing_intervals = crossing_intervals.sample(frac=1)
-
-for i, interval in random_crossing_intervals.iterrows():
+for i, interval in crossing_intervals.iterrows():
 
     # Load data around the interval
     interval_buffer = dt.timedelta(minutes=10)
