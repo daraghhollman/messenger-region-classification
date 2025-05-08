@@ -4,9 +4,10 @@ Script to see how the duration of crossing intervals changes with heliocentric d
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from hermpy import boundaries, trajectory, utils
 
-only_of_type = "MP"  # "", "BS", "MP"
+only_of_type = ""  # "", "BS", "MP"
 
 # Load Philpott intervals
 philpott_intervals = boundaries.Load_Crossings(
@@ -102,5 +103,42 @@ if only_of_type != "":
 else:
     philpott_axis.set_title("Philpott Intervals")
     sun_axis.set_title("Sun Intervals")
+
+plt.show()
+
+fig, axes = plt.subplots(1, 2, sharey=True)
+
+for ax, intervals in zip(axes, [philpott_intervals, sun_intervals]):
+
+    bin_edges = np.linspace(
+        intervals["Heliocentric Distance (AU)"].min(),
+        intervals["Heliocentric Distance (AU)"].max(),
+        8,
+    )
+
+    intervals["Distance Bin"] = pd.cut(
+        intervals["Heliocentric Distance (AU)"], bins=bin_edges
+    )
+
+    grouped_durations = [
+        group["Duration"].values for _, group in intervals.groupby("Distance Bin")
+    ]
+
+    ax.boxplot(
+        grouped_durations,
+        tick_labels=[
+            f"{interval.left:.2f}\nto\n{interval.right:.2f}"
+            for interval in intervals["Distance Bin"].cat.categories
+        ],
+    )
+
+    ax.set_xlabel("Heliocentric Distance Bins [AU]")
+
+    ax.margins(y=0)
+
+axes[0].set_ylabel("Duration (seconds)")
+
+axes[0].set_title("Philpott Intervals")
+axes[1].set_title("Sun Intervals")
 
 plt.show()
