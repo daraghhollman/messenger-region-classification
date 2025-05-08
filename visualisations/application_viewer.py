@@ -3,8 +3,11 @@ Script to visualise the application of any model to a given crossing group or se
 """
 
 import datetime as dt
+import random
 
+import matplotlib.patheffects
 import matplotlib.pyplot as plt
+import matplotlib.ticker
 import numpy as np
 import pandas as pd
 from hermpy import boundaries, mag, plotting, utils
@@ -79,9 +82,12 @@ new_crossings = pd.read_csv(
 new_crossings["Time"] = pd.to_datetime(new_crossings["Time"])
 
 # Randomly sort the crossing groups and loop through them to look at
-random_crossing_groups = crossing_intervals.sample(frac=1)
+# random.shuffle(crossing_groups)
 
-for i, crossing_group in random_crossing_groups.iterrows():
+i = 0
+for crossing_group in crossing_groups:
+
+    print(i)
 
     # Load data around the interval
     interval_buffer = dt.timedelta(minutes=10)
@@ -91,7 +97,6 @@ for i, crossing_group in random_crossing_groups.iterrows():
         end = crossing_group["End Time"] + interval_buffer
 
     else:
-        print(type(crossing_group))
         start = crossing_group[0]["Start Time"] - interval_buffer
         end = crossing_group[1]["End Time"] + interval_buffer
 
@@ -134,7 +139,7 @@ for i, crossing_group in random_crossing_groups.iterrows():
     magnitude_axis.set_ylabel("|B| [nT]")
 
     components_axis.set_ylabel("Magnetic Field Strength [nT]")
-    components_axis.axhline(0, color="grey", ls="dotted", lw=2)
+    components_axis.axhline(0, color="black", ls="dotted", lw=2)
     components_legend = components_axis.legend()
     components_legend = components_axis.legend()
 
@@ -145,38 +150,54 @@ for i, crossing_group in random_crossing_groups.iterrows():
         probabilities["Time"],
         probabilities["P(SW)"],
         color=wong_colours["yellow"],
-        lw=3,
+        path_effects=[  # Add a black outline to the line
+            matplotlib.patheffects.Stroke(linewidth=2, foreground="k"),
+            matplotlib.patheffects.Normal(),
+        ],
         label="P(SW)",
     )
     probability_axis.plot(
         probabilities["Time"],
         probabilities["P(MSh)"],
         color=wong_colours["orange"],
-        lw=3,
+        path_effects=[  # Add a black outline to the line
+            matplotlib.patheffects.Stroke(linewidth=2, foreground="k"),
+            matplotlib.patheffects.Normal(),
+        ],
         label="P(MSh)",
     )
     probability_axis.plot(
         probabilities["Time"],
         probabilities["P(MSp)"],
         color=wong_colours["blue"],
-        lw=3,
+        path_effects=[  # Add a black outline to the line
+            matplotlib.patheffects.Stroke(linewidth=2, foreground="k"),
+            matplotlib.patheffects.Normal(),
+        ],
         label="P(MSp)",
     )
     probability_axis.legend()
     probability_axis.set_ylim(0, 1)
+    probability_axis.set_ylabel("Class Probability")
     plotting.Add_Tick_Ephemeris(probability_axis)
 
     # Add boundary crossing intervals
-    """
-    boundaries.Plot_Crossing_Intervals(
-        ax,
-        interval["Start Time"] - interval_buffer,
-        interval["End Time"] + interval_buffer,
-        crossing_intervals,
-        lw=3,
-        color="black",
-    )
-    """
+    # We only need start time within the data as crossing groups never spans
+    # part of an interval only
+    intervals_within_data = crossing_intervals.loc[
+        crossing_intervals["Start Time"].between(start, end)
+    ]
+
+    for _, crossing_interval in intervals_within_data.iterrows():
+        for ax in axes:
+            ax.axvspan(
+                crossing_interval["Start Time"],
+                crossing_interval["End Time"],
+                fill=False,
+                linewidth=0,
+                hatch="/",
+                zorder=5,
+            )
 
     # Plot new crossings
 
@@ -187,6 +208,7 @@ for i, crossing_group in random_crossing_groups.iterrows():
 
     crossing_labels = []
     for index, c in crossings_in_data.iterrows():
+
         for ax in axes:
             ax.axvline(c["Time"], color="black", ls="dashed")
 
@@ -313,5 +335,22 @@ for i, crossing_group in random_crossing_groups.iterrows():
             for ax in axes:
                 ax.axvspan(c["Time"], end, color=shade, alpha=0.3)
 
+    for ax in axes:
+        # Format ticks
+        ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+        ax.xaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator())
+
+        ax.tick_params(
+            "x", which="major", direction="inout", length=20, width=1.5, zorder=5
+        )
+        ax.tick_params(
+            "x", which="minor", direction="inout", length=10, width=1.5, zorder=5
+        )
+
+        ax.tick_params("y", which="major", direction="out", length=10)
+        ax.tick_params("y", which="minor", direction="out", length=5)
+
     print("Displaying plot")
     plt.show()
+
+    i += 1
