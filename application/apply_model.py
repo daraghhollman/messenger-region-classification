@@ -330,7 +330,7 @@ for i, crossing in crossings.iterrows():
                     "Label": region_labels[current_crossing_index + 1],
                     # Including the values at the crossing points
                     "Confidence": 1
-                    - np.mean(
+                    - np.median(
                         probability_ratio[
                             current_crossing_index : next_crossing_index + 1
                         ]
@@ -382,7 +382,7 @@ for i, crossing in crossings.iterrows():
                 "Label": region_labels[crossing_indices[0] - 1],
                 # Including the values at the crossing points
                 "Confidence": 1
-                - np.mean(probability_ratio[0 : crossing_indices[0] + 1]),
+                - np.median(probability_ratio[0 : crossing_indices[0] + 1]),
             }
         )
         regions.append(
@@ -400,7 +400,8 @@ for i, crossing in crossings.iterrows():
                 ).total_seconds(),
                 "Label": region_labels[crossing_indices[0] + 1],
                 # Including the values at the crossing points
-                "Confidence": 1 - np.mean(probability_ratio[crossing_indices[0] : -1]),
+                "Confidence": 1
+                - np.median(probability_ratio[crossing_indices[0] : -1]),
             }
         )
 

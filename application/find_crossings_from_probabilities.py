@@ -153,7 +153,7 @@ for crossing_group in tqdm(
                     "Label": region_labels[current_crossing_index + 1],
                     # Including the values at the crossing points
                     "Confidence": 1
-                    - np.mean(
+                    - np.median(
                         probability_ratio[
                             current_crossing_index : next_crossing_index + 1
                         ]
@@ -205,7 +205,7 @@ for crossing_group in tqdm(
                 "Label": region_labels[crossing_indices[0] - 1],
                 # Including the values at the crossing points
                 "Confidence": 1
-                - np.mean(probability_ratio[0 : crossing_indices[0] + 1]),
+                - np.median(probability_ratio[0 : crossing_indices[0] + 1]),
             }
         )
         regions.append(
@@ -237,8 +237,8 @@ for crossing_group in tqdm(
 
     region_data.loc[
         ~(
-            (region_data["Duration (seconds)"] >= 40)
-            | (region_data["Confidence"] > 0.56)
+            (region_data["Duration (seconds)"] >= 65)
+            | (region_data["Confidence"] > 0.757)
         ),
         "Label",
     ] = "Unknown"
