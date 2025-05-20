@@ -21,61 +21,85 @@ crossings = pd.read_csv(
 )
 crossings["Time"] = pd.to_datetime(crossings["Time"])
 
-# Find the position of each crossing
-# Load full mission data
+# To quickly find the position of each crossing in MSM' coordinates, we can
+# load the full mission at 1 second resolution from file, and cross-reference.
 full_mission = mag.Load_Mission("/home/daraghhollman/Main/data/mercury/messenger_mag")
-
-# Add on the columns of full_mission for the rows in crossings
-# Does this using the nearest element
-# Its so fast omg
 crossings = pd.merge_asof(
-    crossings, full_mission, left_on="Time", right_on="date", direction="nearest"
+    # Does this using the nearest element
+    # Its so fast omg
+    crossings,
+    full_mission,
+    left_on="Time",
+    right_on="date",
+    direction="nearest",
 )
 
+# We want to filter by heliocentric distance, and so must calculate this for
+# each crossing
 crossings["Heliocentric Distance"] = utils.Constants.KM_TO_AU(
     trajectory.Get_Heliocentric_Distance(crossings["Time"])
 )
 
-full_mission["Heliocentric Distance"] = utils.Constants.KM_TO_AU(
-    trajectory.get_heliocentric_distances_parallel(full_mission["date"], processes=20)
-)
 
+# We want to calculate heliocentric distance for all rows of the full mission,
+# however, there are far too many calculations at a one second cadence. Hence,
+# we need to bin the values at some frequency, and determine the Heliocentric
+# distance for that bin alone.
+# This is some fancy code to do that in a reasonable amount of time
+def Get_Mission_Heliocentric_Distance(mission, frequency):
+    bin_frequency = frequency
+    bin_start = mission["date"].iloc[0].floor("D")
+    bin_end = mission["date"].iloc[-1].ceil("D")
+    bin_edges = pd.date_range(bin_start, bin_end, freq=bin_frequency)
+
+    bin_indices = np.searchsorted(bin_edges, mission["date"], side="right") - 1
+    mission["Bin Index"] = bin_indices
+
+    bin_centres = bin_edges[:-1] + (bin_edges[1:] - bin_edges[:-1]) / 2
+
+    bin_heliocentric_distances = utils.Constants.KM_TO_AU(
+        trajectory.Get_Heliocentric_Distance(bin_centres)
+    )
+
+    mission["Bin Index"] = np.clip(bin_indices, 0, len(bin_heliocentric_distances) - 1)
+
+    mission["Heliocentric Distance"] = bin_heliocentric_distances[
+        mission["Bin Index"].values
+    ]
+
+
+# Calculate mission heliocentric distance, binned weekly
+Get_Mission_Heliocentric_Distance(full_mission, "1W")
+
+# Define spatial bins
 bin_size = 0.5
 x_bins = np.arange(-5, 5 + bin_size, bin_size)
 y_bins = np.arange(-5, 5 + bin_size, bin_size)
 z_bins = np.arange(-8, 2 + bin_size, bin_size)
 cyl_bins = np.arange(0, 10 + bin_size, bin_size)
 
-# Limit by heliocentric distance bin
-heliocentric_distance_bin_edges = np.linspace(0.3, 0.47, 17)
+# Define heliocentric distance bins
+heliocentric_distance_bin_size = 0.01
+heliocentric_distance_bin_edges = np.arange(
+    0.3, 0.47 + heliocentric_distance_bin_size, heliocentric_distance_bin_size
+)
+heliocentric_distance_bin_centres = (
+    heliocentric_distance_bin_edges[:-1] + heliocentric_distance_bin_edges[1:]
+) / 2
 
-bow_shock_crossing_rates = {
-    "Mean": [],
-    "Median": [],
-}
-magnetopause_crossing_rates = {
-    "Mean": [],
-    "Median": [],
-}
+bow_shock_crossing_rates = []
 
+# Loop through each heliocentric distance bin
 for bin_start, bin_end in zip(
     heliocentric_distance_bin_edges, heliocentric_distance_bin_edges[1:]
 ):
 
-    filtered_mission = full_mission.loc[
-        full_mission["Heliocentric Distance"].between(bin_start, bin_end)
-    ]
-
-    positions = [
-        filtered_mission["X MSM' (radii)"],
-        filtered_mission["Y MSM' (radii)"],
-        filtered_mission["Z MSM' (radii)"],
-    ]
-
+    # Filter for only the crossings within this bin
     filtered_crossings = crossings.loc[
         crossings["Heliocentric Distance"].between(bin_start, bin_end)
     ]
 
+    # Split by BS or MP
     bow_shock_crossings = filtered_crossings.loc[
         filtered_crossings["Transition"].str.contains("BS")
     ].copy()
@@ -83,64 +107,77 @@ for bin_start, bin_end in zip(
         filtered_crossings["Transition"].str.contains("MP")
     ].copy()
 
-    # Get residence histograms. These are the frequency of data points. We have
-    # loaded 1 second average data.
-    residence_xy, _, _ = np.histogram2d(
-        positions[0], positions[1], bins=[x_bins, y_bins]
+    filtered_mission = full_mission.loc[
+        full_mission["Heliocentric Distance"].between(bin_start, bin_end)
+    ]
+    positions = [
+        filtered_mission["X MSM' (radii)"],
+        filtered_mission["Y MSM' (radii)"],
+        filtered_mission["Z MSM' (radii)"],
+    ]
+
+    # Find the spatial spread of bow shock crossings in the cylindrical
+    # coordinate system for this heliocentric bin
+    bow_shock_spatial_counts, _, _ = np.histogram2d(
+        bow_shock_crossings["X MSM' (radii)"],
+        np.sqrt(
+            bow_shock_crossings["Y MSM' (radii)"] ** 2
+            + bow_shock_crossings["Z MSM' (radii)"] ** 2
+        ),
+        bins=[x_bins.tolist(), cyl_bins.tolist()],
     )
-    residence_xz, _, _ = np.histogram2d(
-        positions[0], positions[2], bins=[x_bins, z_bins]
-    )
-    residence_cyl, _, _ = np.histogram2d(
+
+    """
+    # Little snippet to view the bow shock bin counts
+    plt.pcolormesh(x_bins, cyl_bins, bow_shock_spatial_counts.T)
+    plt.colorbar()
+    plt.show()
+    continue
+    """
+
+    # We want to know how much time the spacecraft spent in each spatial bin
+    # for this heliocentric distance bin
+    # Each data point is a second in time
+    residence, _, _ = np.histogram2d(
         positions[0],
         np.sqrt(positions[1] ** 2 + positions[2] ** 2),
-        bins=[x_bins, cyl_bins],
+        bins=[x_bins.tolist(), cyl_bins.tolist()],
     )
 
-    # Loop for magnetopause and bow shock
-    for i, c in enumerate([bow_shock_crossings, magnetopause_crossings]):
+    """
+    # Little snippet to view the residence
+    plt.pcolormesh(x_bins, cyl_bins, residence.T)
+    plt.colorbar()
+    plt.show()
+    continue
+    """
 
-        xy_hist_data, _, _ = np.histogram2d(
-            c["X MSM' (radii)"],
-            c["Y MSM' (radii)"],
-            bins=[x_bins, y_bins],
-        )
-        xz_hist_data, _, _ = np.histogram2d(
-            c["X MSM' (radii)"],
-            c["Z MSM' (radii)"],
-            bins=[x_bins, z_bins],
-        )
-        cyl_hist_data, _, _ = np.histogram2d(
-            c["X MSM' (radii)"],
-            np.sqrt(c["Y MSM' (radii)"] ** 2 + c["Z MSM' (radii)"] ** 2),
-            bins=[x_bins, cyl_bins],
-        )
-
-        # Normalise
-        # Yielding crossings per second
-
-        xy_hist_data = np.where(residence_xy != 0, xy_hist_data / residence_xy, np.nan)
-        xz_hist_data = np.where(residence_xz != 0, xz_hist_data / residence_xz, np.nan)
-        cyl_hist_data = np.where(
-            residence_cyl != 0, cyl_hist_data / residence_cyl, np.nan
+    # We then divide the spatial crossing density by the dwell time in each bin
+    # We ignore where residence == 0 as these are invalid
+    # This gives crossings per second for each spatial bin for each
+    # heliocentric distance bin
+    with np.errstate(divide="ignore", invalid="ignore"):
+        # We can safely disable the divide by zero warning here as we use a
+        # where statement. The where still does the full calculation, which is
+        # why the warning is there, but the values areplaced with nan
+        bow_shock_crossing_rate = np.where(
+            residence != 0, bow_shock_spatial_counts / residence, np.nan
         )
 
-        # Limit to non-zero, non-nan data
-        valid_data = cyl_hist_data[~np.isnan(cyl_hist_data) & (cyl_hist_data > 0)]
+    """
+    # Little snippet to view the crossing rate
+    plt.pcolormesh(x_bins, cyl_bins, bow_shock_crossing_rate.T)
+    plt.colorbar()
+    plt.show()
+    continue
+    """
 
-        median_crossing_rate = np.median(valid_data)
-        mean_crossing_rate = np.mean(valid_data)
+    # Total crossing rate is the sum of the crossing rate in all spatial bins
+    total_bow_shock_crossing_rate = np.nansum(bow_shock_crossing_rate)
+    bow_shock_crossing_rates.append(total_bow_shock_crossing_rate)
 
-        if i == 0:
-            bow_shock_crossing_rates["Median"].append(median_crossing_rate)
-            bow_shock_crossing_rates["Mean"].append(mean_crossing_rate)
-        else:
-            magnetopause_crossing_rates["Median"].append(median_crossing_rate)
-            magnetopause_crossing_rates["Mean"].append(mean_crossing_rate)
+    # We want to multiply this by the total Philpott interval duration within that bin
 
-bin_centres = (
-    heliocentric_distance_bin_edges[:-1] + heliocentric_distance_bin_edges[1:]
-) / 2
 
 fig, ax = plt.subplots()
 
