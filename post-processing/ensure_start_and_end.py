@@ -9,7 +9,8 @@ from hermpy import boundaries, utils
 
 # The region classifications are the raw output
 regions = pd.read_csv(
-    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_regions.csv"
+    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_regions.csv",
+    parse_dates=["Start Time", "End Time"],
 )
 
 # We need to split the list of regions back up into a list of applications. The
@@ -30,6 +31,7 @@ philpott_intervals = boundaries.Load_Crossings(
 )
 
 new_region_groups = []
+number_of_regions_changed = 0
 
 # For each group, we want to find the associated Philpott intervals.
 for group_regions in region_groups:
@@ -59,6 +61,60 @@ for group_regions in region_groups:
             interval_type, ("Error", "Error")
         )
 
+        # If the first or last region span across the crossing interval, we instead
+        # want to split it at the outermost part of the interval
+
+        if (
+            first_region["End Time"]
+            > intervals_within_application.iloc[0]["Start Time"]
+        ):
+
+            new_region = pd.DataFrame(
+                [
+                    {
+                        "Start Time": intervals_within_application.iloc[0][
+                            "Start Time"
+                        ],
+                        "End Time": first_region["End Time"],
+                        "Label": first_region["Label"],
+                    }
+                ]
+            )
+
+            # Modify the first region's end time
+            group_regions.iloc[0, group_regions.columns.get_loc("End Time")] = (
+                intervals_within_application.iloc[0]["Start Time"]
+            )
+
+            # Insert new region just after first
+            group_regions = pd.concat(
+                [group_regions.iloc[:1], new_region, group_regions.iloc[1:]],
+                ignore_index=True,
+            )
+
+        if last_region["Start Time"] < intervals_within_application.iloc[0]["End Time"]:
+
+            new_region = pd.DataFrame(
+                [
+                    {
+                        "Start Time": last_region["Start Time"],
+                        "End Time": intervals_within_application.iloc[0]["End Time"],
+                        "Label": last_region["Label"],
+                    }
+                ]
+            )
+
+            # Modify the last region's start time
+            group_regions.iloc[-1, group_regions.columns.get_loc("Start Time")] = (
+                intervals_within_application.iloc[0]["End Time"]
+            )
+
+            # Insert new region just before last
+            group_regions = pd.concat(
+                [group_regions.iloc[:-1], new_region, group_regions.iloc[-1:]],
+                ignore_index=True,
+            )
+
     else:
         start_type = intervals_within_application.iloc[0]["Type"]
         end_type = intervals_within_application.iloc[-1]["Type"]
@@ -66,16 +122,100 @@ for group_regions in region_groups:
         expected_starting_region = transition_map.get(start_type, ("Error", None))[0]
         expected_ending_region = transition_map.get(end_type, (None, "Error"))[1]
 
+        # If the first or last region span across the crossing interval, we instead
+        # want to split it at the outermost part of the interval
+
+        if (
+            first_region["End Time"]
+            > intervals_within_application.iloc[0]["Start Time"]
+        ):
+
+            new_region = pd.DataFrame(
+                [
+                    {
+                        "Start Time": intervals_within_application.iloc[0][
+                            "Start Time"
+                        ],
+                        "End Time": first_region["End Time"],
+                        "Label": first_region["Label"],
+                    }
+                ]
+            )
+
+            # Modify the first region's end time
+            group_regions.iloc[0, group_regions.columns.get_loc("End Time")] = (
+                intervals_within_application.iloc[0]["Start Time"]
+            )
+
+            # Insert new region just after first
+            group_regions = pd.concat(
+                [group_regions.iloc[:1], new_region, group_regions.iloc[1:]],
+                ignore_index=True,
+            )
+
+        if (
+            last_region["Start Time"]
+            < intervals_within_application.iloc[-1]["End Time"]
+        ):
+
+            new_region = pd.DataFrame(
+                [
+                    {
+                        "Start Time": last_region["Start Time"],
+                        "End Time": intervals_within_application.iloc[-1]["End Time"],
+                        "Label": last_region["Label"],
+                    }
+                ]
+            )
+
+            # Modify the last region's start time
+            group_regions.iloc[-1, group_regions.columns.get_loc("Start Time")] = (
+                intervals_within_application.iloc[-1]["End Time"]
+            )
+
+            # Insert new region just before last
+            group_regions = pd.concat(
+                [group_regions.iloc[:-1], new_region, group_regions.iloc[-1:]],
+                ignore_index=True,
+            )
+
+    # After insertion, we need to redefine regions
+    first_region = group_regions.iloc[0]
+    last_region = group_regions.iloc[-1]
+
+    region_counted = False
     if first_region["Label"] != expected_starting_region:
-        group_regions.loc[group_regions.index[0], "Label"] = expected_starting_region
+        group_regions.loc[0, "Label"] = expected_starting_region
+        number_of_regions_changed += 1
+        region_counted = True
 
     if last_region["Label"] != expected_ending_region:
-        group_regions.loc[group_regions.index[-1], "Label"] = expected_ending_region
+        group_regions.loc[-1, "Label"] = expected_ending_region
+        if not region_counted:
+            number_of_regions_changed += 1
+
+    # We want to combine neighbouring regions of the same type
+    # This dramatically slows down the code. Is there a faster way?
+    combined_regions = [group_regions.iloc[0].copy()]
+    for i in range(1, len(group_regions)):
+        current = group_regions.iloc[i]
+        previous = combined_regions[-1]
+
+        if current["Label"] == previous["Label"]:
+            # Extend the previous region's end time
+            combined_regions[-1]["End Time"] = current["End Time"]
+        else:
+            combined_regions.append(current.copy())
+
+    group_regions = pd.DataFrame(combined_regions)
 
     new_region_groups.append(group_regions)
 
 post_processed_regions = pd.concat(new_region_groups)
 
 post_processed_regions.to_csv(
-    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/post-processing/bookend_regions_processed.csv"
+    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/post-processing/1_bookend_regions_processed.csv"
 )
+
+print(f"{number_of_regions_changed} regions changed")
+print(f"{number_of_regions_changed / len(new_region_groups)}%")
