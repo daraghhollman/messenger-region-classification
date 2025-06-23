@@ -9,14 +9,10 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-model_without_heliocentric_distance = False
-
 # Load the data
 print("Loading Model Output")
 model_output = pd.read_csv(
-    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/output.csv"
-    if not model_without_heliocentric_distance
-    else "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/output_without_heliocentric_distance.csv"
+    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/model_raw_output.csv"
 )
 print("Output Loaded")
 
@@ -74,6 +70,8 @@ split_indices = [0] + jump_indices.tolist() + [len(times)]
 split_indices = [0] + jump_indices.tolist() + [len(times)]
 split_indices.sort()
 
+# We need some buffer on the edges of the applciation so there is data
+buffer = 1
 crossing_groups = [
     {
         "Time": times[start:end],
@@ -81,7 +79,9 @@ crossing_groups = [
         "P(Magnetosheath)": probabilities["Magnetosheath"][start:end],
         "P(Magnetosphere)": probabilities["Magnetosphere"][start:end],
     }
-    for start, end in zip(split_indices[:-1], split_indices[1:])
+    for start, end in zip(
+        np.add(split_indices[:-1], buffer), np.subtract(split_indices[1:], buffer)
+    )
 ]
 
 # Now we can loop through these crossing groups and apply our logic
@@ -371,11 +371,7 @@ for transition, count in transition_counts.items():
 
 pd.DataFrame(new_crossings).to_csv(
     "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings.csv"
-    if not model_without_heliocentric_distance
-    else "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings_without_heliocentric_distance"
 )
 pd.concat(all_regions).to_csv(
     "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_regions.csv"
-    if not model_without_heliocentric_distance
-    else "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_regions_without_heliocentric_distance.csv"
 )
