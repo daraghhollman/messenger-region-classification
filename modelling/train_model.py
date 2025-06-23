@@ -17,10 +17,6 @@ import sklearn.model_selection
 
 def main():
 
-    balance_classes = True
-    no_ephem = False
-    no_heliocentric_distance = False
-
     # Load extracted features
     # These are in 4 different data sets which we need to combine
     inputs = {
@@ -38,8 +34,6 @@ def main():
 
     # Combine into one dataframe
     features_data = pd.concat(features_data, ignore_index=True).dropna()
-
-    print(f"Length: {len(features_data)}")
 
     features_data = features_data.drop(
         columns=["Sample Start", "Sample End", "Boundary ID"]
@@ -83,25 +77,6 @@ def main():
         ]
     )
 
-    if no_ephem:
-        features_data = features_data.drop(
-            columns=[
-                "Local Time (hrs)",
-                "X MSM' (radii)",
-                "Y MSM' (radii)",
-                "Z MSM' (radii)",
-                "Latitude (deg.)",
-                "Magnetic Latitude (deg.)",
-            ]
-        )
-
-    elif no_heliocentric_distance:
-        features_data = features_data.drop(
-            columns=[
-                "Heliocentric Distance (AU)",
-            ]
-        )
-
     # We previously extracted BS and MP adjacent magnetosheath data as different
     # We change their labels to be the same now.
     # This introduces a class imbalance which we must account for.
@@ -112,19 +87,42 @@ def main():
         "MP Magnetosheath", "Magnetosheath"
     )
 
-    if balance_classes:
-        magnetosheath_rows = features_data.loc[
-            features_data["Label"] == "Magnetosheath"
-        ]
-        rows_to_remove = magnetosheath_rows.sample(frac=0.5)
+    features_data.to_csv(
+        "/home/daraghhollman/Main/Work/mercury/DataSets/training_data.csv"
+    )
 
-        features_data = features_data.drop(rows_to_remove.index)
+    # Downsample magnetosheath until classes are balanced
+    # Functionally just halving the number of magnetosheath samples
+    magnetosheath_rows = features_data.loc[features_data["Label"] == "Magnetosheath"]
+    rows_to_remove = magnetosheath_rows.sample(frac=0.5)
+
+    features_data = features_data.drop(rows_to_remove.index)
+
+    # Filter outliers
+    extreme_rows = features_data.loc[
+        (features_data["Mean |B|"] >= 5000)
+        | (features_data["Standard Deviation |B|"] >= 5000)
+    ]
+    features_data = features_data.drop(extreme_rows.index)
+    print(f"Removed {len(extreme_rows)} extreme rows")
+
+    print(
+        f"""
+        Training data:
+        Size: {len(features_data)}
+            SW: {len(features_data.loc[features_data["Label"] == "Solar Wind"])}
+            MSh: {len(features_data.loc[features_data["Label"] == "Magnetosheath"])}
+            MSp: {len(features_data.loc[features_data["Label"] == "Magnetosphere"])}
+        """
+    )
 
     # Start our multi-model loop:
     number_of_iterrations = 10
     print(f"Training {number_of_iterrations} models")
     models = []
     testing_accuracies = []
+    testing_recalls = []
+    testing_precisions = []
     testing_confusion_matrices = []
     for model_index in range(number_of_iterrations):
 
@@ -151,10 +149,10 @@ def main():
             )
         )
 
-        # Define our model using default parameters
-        # Note that we aren't using the validation sets for each model.
-        # If needed, we can use these to tune the hyperparameters
+        print(len(training_X))
+        print(len(testing_X))
 
+        # Define our model using default parameters
         model = sklearn.ensemble.RandomForestClassifier(n_jobs=-1)
         model.fit(training_X, training_y)
 
@@ -165,7 +163,15 @@ def main():
         testing_accuracy = sklearn.metrics.accuracy_score(
             testing_y, testing_predictions
         )
+        testing_recall = sklearn.metrics.recall_score(
+            testing_y, testing_predictions, average="micro"
+        )
+        testing_precision = sklearn.metrics.precision_score(
+            testing_y, testing_predictions, average="micro"
+        )
         testing_accuracies.append(testing_accuracy)
+        testing_recalls.append(testing_recall)
+        testing_precisions.append(testing_precision)
 
         testing_confusion_matrix = sklearn.metrics.confusion_matrix(
             testing_y, testing_predictions
@@ -175,13 +181,21 @@ def main():
         print(f"Model trained with testing accuracy: {testing_accuracy}")
 
     # Print stats
+    print("Accuracy")
     print(f"Mean model testing accuracy: {np.mean(testing_accuracies)}")
     print(f"Std model testing accuracy: {np.std(testing_accuracies)}")
+
+    print("Recall")
+    print(f"Mean model testing recall: {np.mean(testing_recalls)}")
+    print(f"Std model testing recall: {np.std(testing_recalls)}")
+
+    print("Precision:")
+    print(f"Mean model testing precision: {np.mean(testing_precisions)}")
+    print(f"Std model testing precision: {np.std(testing_precisions)}")
 
     # Make plots!
     # Save out confusion matrices, testing accuracies, and models
     # to plot later.
-    """
     with open(
         "/home/daraghhollman/Main/Work/papers/boundaries/resources/models",
         "wb",
@@ -199,7 +213,6 @@ def main():
         "wb",
     ) as file:
         pickle.dump(testing_accuracies, file)
-    """
 
     # AVERAGE FEATURE IMPORTANCE
     importances = np.array([model.feature_importances_ for model in models]).T
@@ -265,24 +278,17 @@ def main():
     plt.show()
 
     # If happy with the output, we can save the model
-    if no_ephem:
-        output_file = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/no_ephem"
-
-    elif no_heliocentric_distance:
-        output_file = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/model_without_heliocentric_distance"
-    else:
-        output_file = (
-            "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/three_class_random_forest"
-            if not balance_classes
-            else "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/class_balenced_model"
-        )
+    output_file = "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/modelling/model"
 
     # We arbitraraly save the 1st model
+    # Due to the use of random seed, this is functionally a random choice
     with open(
         output_file,
         "wb",
     ) as file:
         pickle.dump(models[0], file)
+
+    print("Model saved to:\n" + output_file)
 
 
 if __name__ == "__main__":
