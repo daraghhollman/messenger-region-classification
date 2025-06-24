@@ -90,6 +90,12 @@ def main():
     features_data.to_csv(
         "/home/daraghhollman/Main/Work/mercury/DataSets/training_data.csv"
     )
+    features_data.to_csv(
+        "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/training_data.csv"
+    )
+    features_data.to_csv(
+        "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/zenodo-data/training_data.csv"
+    )
 
     # Downsample magnetosheath until classes are balanced
     # Functionally just halving the number of magnetosheath samples
