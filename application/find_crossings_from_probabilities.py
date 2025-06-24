@@ -70,8 +70,9 @@ split_indices = [0] + jump_indices.tolist() + [len(times)]
 split_indices = [0] + jump_indices.tolist() + [len(times)]
 split_indices.sort()
 
-# We need some buffer on the edges of the applciation so there is data
-buffer = 1
+# We need some buffer the classifications to remove eroneous edge cases which
+# lack sufficient data
+buffer = 5
 crossing_groups = [
     {
         "Time": times[start:end],
