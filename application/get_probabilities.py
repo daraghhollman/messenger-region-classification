@@ -204,9 +204,7 @@ def Get_Probabilities(crossing_interval_group):
         samples = pd.concat(samples, ignore_index=True)
 
         samples["Heliocentric Distance (AU)"] = utils.Constants.KM_TO_AU(
-            trajectory.Get_Heliocentric_Distance(
-                samples["Mid-Time"].to_list()
-            )
+            trajectory.Get_Heliocentric_Distance(samples["Mid-Time"].to_list())
         )
 
         # Ensure everything is in the correct order
@@ -246,11 +244,16 @@ def tqdm_joblib(tqdm_object):
 
 
 with tqdm_joblib(
-    tqdm(desc="Applying model to crossing intervals", dynamic_ncols=True, smoothing=0, total=len(crossing_groups))
-) as progress_bar:
-    results = joblib.Parallel(n_jobs=n_jobs, temp_folder="/net/romulus.ap.dias.ie/romulus/dhollman/tmp/")(
-        joblib.delayed(Get_Probabilities)(group) for group in crossing_groups
+    tqdm(
+        desc="Applying model to crossing intervals",
+        dynamic_ncols=True,
+        smoothing=0,
+        total=len(crossing_groups),
     )
+) as progress_bar:
+    results = joblib.Parallel(
+        n_jobs=n_jobs, temp_folder="/net/romulus.ap.dias.ie/romulus/dhollman/tmp/"
+    )(joblib.delayed(Get_Probabilities)(group) for group in crossing_groups)
 
 
 times, probabilities = zip(*results)  # Unpack results
@@ -266,4 +269,4 @@ data_to_save = {
     "P(SW)": probabilities[:, 2],
 }
 
-pd.DataFrame(data_to_save).to_csv("../outputs/model_ouput.csv", index=False)
+pd.DataFrame(data_to_save).to_csv("../data/model_ouput.csv", index=False)
