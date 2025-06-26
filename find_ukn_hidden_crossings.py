@@ -8,13 +8,9 @@ import collections
 import numpy as np
 import pandas as pd
 
-no_heliocentric_distance = True
-
 # Load the new crossing list
 hollman_crossings = pd.read_csv(
     "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings.csv"
-    if not no_heliocentric_distance
-    else "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings_without_heliocentric_distance"
 )
 hollman_crossings["Time"] = pd.to_datetime(hollman_crossings["Time"])
 
