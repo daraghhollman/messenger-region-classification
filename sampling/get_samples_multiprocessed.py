@@ -1,7 +1,7 @@
 """
 In this script, we search through each boundary in the Philpott boundary interval list and extract many samples
 of time series data before and after it.
-To save on compute time, we could take X random samples of size Y, within time Z of boundary edges.
+To save on compute time, we take X random samples of size Y, within time Z of boundary edges.
 """
 
 import csv
@@ -79,9 +79,7 @@ def Get_Random_Sample(
     sample_label = labels.get((boundary_type, sample_location), "Unknown")
 
     if len(sample_data) == 0:
-        sample_features = {
-            "Label": sample_label
-        }
+        sample_features = {"Label": sample_label}
         return sample_features
 
     # Get features
@@ -130,6 +128,9 @@ def Get_Sample_Features(data):
         et = spice.str2et(data_middle["date"].strftime("%Y-%m-%d %H:%M:%S"))
         mercury_position, _ = spice.spkpos("MERCURY", et, "J2000", "NONE", "SUN")
 
+        # The way the code is written in hermpy, it would be much faster to do
+        # this heliocentric distance calculation for all samples at the end,
+        # rather than during sample collection.
         heliocentric_distance = np.sqrt(
             mercury_position[0] ** 2
             + mercury_position[1] ** 2
@@ -170,8 +171,8 @@ def Process_Crossing(inputs):
     latest_sample_start_before = crossing_interval["Start Time"] - sample_length
 
     if i > 0:
-        if earliest_sample_start_before < crossing_intervals.loc[i-1]["End Time"]:
-            earliest_sample_start_before = crossing_intervals.loc[i-1]["End Time"]
+        if earliest_sample_start_before < crossing_intervals.loc[i - 1]["End Time"]:
+            earliest_sample_start_before = crossing_intervals.loc[i - 1]["End Time"]
 
     earliest_sample_start_after = crossing_interval["End Time"]
     latest_sample_start_after = (
@@ -179,14 +180,20 @@ def Process_Crossing(inputs):
     )
 
     if i > 0:
-        if latest_sample_start_after > crossing_intervals.loc[i+1]["Start Time"]:
-            latest_sample_start_after = crossing_intervals.loc[i+1]["Start Time"] - sample_length
+        if latest_sample_start_after > crossing_intervals.loc[i + 1]["Start Time"]:
+            latest_sample_start_after = (
+                crossing_intervals.loc[i + 1]["Start Time"] - sample_length
+            )
 
     if earliest_sample_start_before > latest_sample_start_before:
-        raise ValueError(f"Sample start ({earliest_sample_start_before}) is after sample end ({latest_sample_start_before})!")
+        raise ValueError(
+            f"Sample start ({earliest_sample_start_before}) is after sample end ({latest_sample_start_before})!"
+        )
 
     if earliest_sample_start_after > latest_sample_start_after:
-        raise ValueError(f"Sample start ({earliest_sample_start_after}) is after sample end ({latest_sample_start_after})!")
+        raise ValueError(
+            f"Sample start ({earliest_sample_start_after}) is after sample end ({latest_sample_start_after})!"
+        )
 
     # Load data
     surrounding_data = mag.Load_Between_Dates(
@@ -251,6 +258,7 @@ print(f"Continuing from crossing id: {last_index + 1}")
 
 process_items = process_items[last_index + 1 :]
 
+
 # Some fancy code to enable us to start and stop the script if needed, without losing progress
 def Safely_Append_Row(output_file, sample):
 
@@ -262,10 +270,12 @@ def Safely_Append_Row(output_file, sample):
         writer.writerow(sample)
         tmp_file_name = tmp_file.name
 
-
     # Append the temp fiile contents atomically
     # i.e. the write happens at once, and errors can't occur from partial writes
-    with open(output_file, "a", newline="") as out_file, open(tmp_file_name, "r") as tmp_file:
+    with (
+        open(output_file, "a", newline="") as out_file,
+        open(tmp_file_name, "r") as tmp_file,
+    ):
         shutil.copyfileobj(tmp_file, out_file)
 
         # Flush python's buffer and force os to flush file to disk
@@ -274,6 +284,7 @@ def Safely_Append_Row(output_file, sample):
 
     # Clean tmp file
     os.remove(tmp_file.name)
+
 
 with multiprocessing.Pool(
     int(input(f"Number of cores? __ / {multiprocessing.cpu_count()} "))
@@ -312,7 +323,9 @@ with multiprocessing.Pool(
                         writer = csv.writer(f)
                         writer.writerow([np.nan] * 14 + list(sample.values()))
                     """
-                    Safely_Append_Row(output_file, [np.nan] * 14 + list(sample.values()))
+                    Safely_Append_Row(
+                        output_file, [np.nan] * 14 + list(sample.values())
+                    )
                     continue
 
                 # If the file doesn't exist, create it
