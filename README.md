@@ -39,12 +39,14 @@ the model, and features are extracted from each sample.
 
 ### Model Training
 The model is created using the script `modelling/train_model.py`. A copy of the
-combined training dataset is saved as `zenodo-data/training_data.csv`. The
-model is fit multiple times (with shuffled training / testing split and seed)
-to determine variance in the method. The default number is 10, though this is
-adjustable. All models are saved for the purposes of visualising feature
-importance and confusion matrices, though only one model is chosen to be
-applied to the data as a whole.
+combined training dataset is saved as `zenodo-data/training_data.csv`
+(zenodo-data is not included in this repository as the files inside are too
+large. However, this is available at the link in the first section of this
+README). The model is fit multiple times (with shuffled training / testing
+split and seed) to determine variance in the method. The default number is 10,
+though this is adjustable. All models are saved for the purposes of visualising
+feature importance and confusion matrices, though only one model is chosen to
+be applied to the data as a whole.
 
 ### Model Application
 The model is then applied to the full mission with
@@ -57,9 +59,14 @@ Direct testing of the model on individual cases is done using
 ### Determining Crossings and Post-processing
 Crossings are then determined from the model output using
 `application/find_crossings_from_probabilities.py`. This places crossings where
-changes in region occur, and saves them to `data/new_crossings.csv`. The regions (now collated into contiguous blocks)
+changes in region occur, and saves them to `data/new_crossings.csv`. The
+regions (now collated into contiguous blocks)
 
-Post processing of this crossing list is done in `post-processing/1_ensure_start_and_end.py` and `post-processing/2_include_hiddent_crossings.py` in that order specifically (as the second relies on the output of the first). The finalised list of crossings is output to `zenodo-data/hollman_2025_post_processing_list.csv`.
+Post processing of this crossing list is done in
+`post-processing/1_ensure_start_and_end.py` and
+`post-processing/2_include_hiddent_crossings.py` in that order specifically (as
+the second relies on the output of the first). The finalised list of crossings
+is output to `zenodo-data/hollman_2025_post_processing_list.csv`.
 
 ## References
 
