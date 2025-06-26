@@ -93,7 +93,7 @@ def main():
     for transition, count in transition_counts.items():
         print(f"{transition}: {count} crossings")
 
-    new_crossings.to_csv("./post-processing/2_hidded_crossings_included.csv")
+    new_crossings.to_csv("./zenodo-data/hollman_2025_crossing_list.csv")
 
 
 if __name__ == "__main__":
