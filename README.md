@@ -14,6 +14,35 @@ This section outlines the order in which files were run to create this data
 product. To execute these on your own machine, you will need to adjust any file
 paths.
 
+### Python Environment
+These scripts were written using Python 3.12.8 with the following packages:
+
+```
+kneed==0.8.5
+matplotlib==3.10.3
+numpy==2.3.1
+pandas==2.3.0
+scipy==1.16.0
+seaborn==0.13.2
+spiceypy==6.0.1
+```
+
+along with the custom package [hermpy](https://github.com/daraghhollman/hermpy/).
+
+To avoid package conflicts, we recommend creating a new virtual environment.
+
+A `requirements.txt` is included to install these packages with:
+```shell
+pip install -r requirements.txt
+```
+
+hermpy must be installed manually:
+```shell
+git clone https://github.com/daraghhollman/hermpy/
+cd hermpy/
+pip install .
+```
+
 ### Setup the hermpy package
 This work relies heavily on the Python package
 [hermpy](https://github.com/daraghhollman/hermpy) which requires some setup.
