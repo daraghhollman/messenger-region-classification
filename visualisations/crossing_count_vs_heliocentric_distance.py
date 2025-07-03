@@ -8,8 +8,6 @@ import pandas as pd
 import scipy.stats
 from hermpy import boundaries, trajectory, utils
 
-use_heliocentric_distance = False
-
 wong_colours = {
     "black": "black",
     "orange": "#E69F00",
@@ -24,16 +22,10 @@ wong_colours = {
 
 # Load crossings
 crossings = pd.read_csv(
-    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings_with_adjusted_counting.csv"
-    if use_heliocentric_distance
-    else "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings_without_heliocentric_distance_with_adjusted_counting.csv"
+    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/hollman_2025_crossing_list.csv"
 )
-"""
-    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings.csv"
-    if use_heliocentric_distance
-    else "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/new_crossings_without_heliocentric_distance"
-"""
-crossings["Time"] = pd.to_datetime(crossings["Time"])
+crossings["Time"] = pd.to_datetime(crossings["Times"])
+crossings["Transition"] = crossings["Label"]
 
 philpott_intervals = boundaries.Load_Crossings(
     utils.User.CROSSING_LISTS["Philpott"], include_data_gaps=False
