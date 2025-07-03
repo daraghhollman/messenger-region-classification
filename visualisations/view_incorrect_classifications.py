@@ -22,25 +22,26 @@ crossing_intervals = boundaries.Load_Crossings(
 specific_indices = [
     66,
     74,
-    3206,  #
-    3208,  # Consecutive entries might be a sign of something physically interesting
-    3209,  #
-    3406,
-    3967,
+    3206,
+    3209,
+    3637,
+    3641,
+    3649,
+    3653,
+    3966,  # Consecutive 'incorrect classifications' may be indicative of something physical
+    3967,  #
     4844,
-    4972,  # Again here too
+    4972,  # Again
     4973,  #
-    5124,
-    6084,
-    10173,
+    7791,
+    10010,
     11124,
-    14527,
 ]
 crossing_intervals = crossing_intervals.loc[specific_indices]
 
 # Load probabilities
 model_output = pd.read_csv(
-    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/output.csv"
+    "/home/daraghhollman/Main/Work/mercury/Code/MESSENGER_Region_Detection/data/model_raw_output.csv"
 )
 model_output["Time"] = pd.to_datetime(model_output["Time"], format="ISO8601")
 
