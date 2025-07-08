@@ -51,6 +51,7 @@ Follow the setup guide for hermpy found in the Github README.
 This includes:
 - Downloading MESSENGER MAG data
 - Downloading the Philpott et al. (2020) crossing interval list
+- Setting up a SPICE MetaKernel
 - Setting up file paths
 
 ### Create the training dataset
