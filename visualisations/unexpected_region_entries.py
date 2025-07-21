@@ -108,6 +108,8 @@ unexpected_instances = 0
 unexpected_indices = []
 unexpected_time = 0
 
+solar_wind_time = []
+
 for index, interval in philpott_intervals.iterrows():
 
     regions_within_interval = new_regions.loc[
@@ -120,6 +122,28 @@ for index, interval in philpott_intervals.iterrows():
             new_regions["End Time"].between(
                 interval["Start Time"], interval["End Time"]
             )
+        )
+    ]
+
+    if len(regions_within_interval) == 0:
+        continue
+    # In this instance, we don't want regions which extend past the interval.
+    # So we need to trim the ends
+    if regions_within_interval.iloc[0]["Start Time"] < interval["Start Time"]:
+        regions_within_interval.at[regions_within_interval.index[0], "Start Time"] = (
+            interval["Start Time"]
+        )
+
+    if regions_within_interval.iloc[-1]["End Time"] > interval["End Time"]:
+        regions_within_interval.at[regions_within_interval.index[-1], "End Time"] = (
+            interval["End Time"]
+        )
+
+    # We must recalculate duration after this change
+    regions_within_interval["Duration (seconds)"] = [
+        (end - start).total_seconds()
+        for start, end in zip(
+            regions_within_interval["Start Time"], regions_within_interval["End Time"]
         )
     ]
 
@@ -145,7 +169,9 @@ for index, interval in philpott_intervals.iterrows():
         unexpected_time += time
 
         unexpected_indices.append(index)
+        solar_wind_time.append(time)
 
+print(solar_wind_time)
 print(unexpected_instances)
 print(unexpected_indices)
 print(f"{unexpected_time} seconds")
