@@ -92,6 +92,7 @@ def main():
     # Print results
     for transition, count in transition_counts.items():
         print(f"{transition}: {count} crossings")
+        print(len(new_crossings))
 
     new_crossings.to_csv("./data/hollman_2025_crossing_list.csv")
 

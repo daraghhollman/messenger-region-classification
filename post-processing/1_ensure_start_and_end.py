@@ -3,6 +3,8 @@ Takes raw outputs from the model and compares each application starting and
 ending region to what is expected by Philpott.
 """
 
+import datetime as dt
+
 import numpy as np
 import pandas as pd
 from hermpy import boundaries, utils
@@ -116,6 +118,7 @@ for group_regions in region_groups:
             )
 
     else:
+
         start_type = intervals_within_application.iloc[0]["Type"]
         end_type = intervals_within_application.iloc[-1]["Type"]
 
@@ -180,18 +183,18 @@ for group_regions in region_groups:
             )
 
     # After insertion, we need to redefine regions
-    first_region = group_regions.iloc[0]
-    last_region = group_regions.iloc[-1]
+    first_region_index = group_regions.index[0]
+    last_region_index = group_regions.index[-1]
 
-    region_counted = False
-    if first_region["Label"] != expected_starting_region:
-        group_regions.loc[0, "Label"] = expected_starting_region
+    application_counted = False
+    if group_regions.at[first_region_index, "Label"] != expected_starting_region:
+        group_regions.at[first_region_index, "Label"] = expected_starting_region
         number_of_regions_changed += 1
-        region_counted = True
+        application_counted = True
 
-    if last_region["Label"] != expected_ending_region:
-        group_regions.loc[-1, "Label"] = expected_ending_region
-        if not region_counted:
+    if group_regions.at[last_region_index, "Label"] != expected_ending_region:
+        group_regions.at[last_region_index, "Label"] = expected_ending_region
+        if not application_counted:
             number_of_regions_changed += 1
 
     # We want to combine neighbouring regions of the same type
